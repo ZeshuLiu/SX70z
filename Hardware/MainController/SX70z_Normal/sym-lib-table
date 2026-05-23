@@ -1,0 +1,6 @@
+(sym_lib_table
+  (version 7)
+  (lib (name "OPSX")(type "KiCad")(uri "${KIPRJMOD}/OPSX.kicad_sym")(options "")(descr ""))
+  (lib (name "OPTICAL-TSL2561T_6P-3.8X2.6MM_")(type "KiCad")(uri "${KIPRJMOD}/OPTICAL-TSL2561T_6P-3.8X2.6MM_.kicad_sym")(options "")(descr ""))
+  (lib (name "TCS3200")(type "KiCad")(uri "${KIPRJMOD}/TCS3200.kicad_sym")(options "")(descr ""))
+)

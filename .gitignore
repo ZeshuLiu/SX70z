@@ -1,0 +1,19 @@
+# Build outputs
+build/
+sdkconfig.old
+*.bin
+*.elf
+*.map
+
+# IDE
+.vscode/
+.cache/
+.clangd/
+
+# ESP-IDF
+managed_components/
+dependencies.lock
+
+# OS
+Thumbs.db
+Desktop.ini

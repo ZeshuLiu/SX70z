@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//d/ESPIDF/v5.5.2/esp-idf/**)",
+      "Read(//e/Develop/SX-70-Mk2/**)"
+    ]
+  }
+}
