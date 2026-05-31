@@ -362,6 +362,15 @@ static void button3d_handler(void)
     camera_state.button.debounce_last = now;
 }
 
+/* ---- 显示任务（中优先级，200ms 周期，与按键/快门解耦） ---- */
+static void display_task(void *pvParameters)
+{
+    while (1) {
+        display_show_frame(&camera_state, &display);
+        vTaskDelay(pdMS_TO_TICKS(200));
+    }
+}
+
 /* ---- 测光任务（低优先级，1s 周期） ---- */
 static void metering_task(void *pvParameters)
 {
@@ -535,6 +544,9 @@ void control_task(void *pvParameters)
         ssd1306_show(&display);
         camera_state.if_display = true;
         ESP_LOGI(TAG, "SSD1306 initialized");
+        /* ---- 启动显示任务（Core 1，中优先级） ---- */
+        xTaskCreatePinnedToCore(display_task, "display", 2048, NULL,
+                                DISPLAY_TASK_PRIO, NULL, 1);
     } else {
         ESP_LOGE(TAG, "SSD1306 init failed");
     }
@@ -639,10 +651,8 @@ void control_task(void *pvParameters)
             }
         }
 
-        display_show_frame(&camera_state, &display);
-
         static int ctrl_log_cnt = 0;
-        if (++ctrl_log_cnt % 5 == 0) {
+        if (++ctrl_log_cnt % 16 == 0) {
             ESP_LOGI(TAG, "S1T=%d Flash=%d Mode=%s LUX=%.2f",
                     s1t_pressed, flash_connected,
                     camera_state.cam_mode, camera_state.metering.last_lux);
@@ -655,7 +665,7 @@ void control_task(void *pvParameters)
         } else {
             gpio_set_level(LED1_PIN, 1);  // LED 低电平点亮，1=灭
         }
-        vTaskDelay(pdMS_TO_TICKS(100));
+        vTaskDelay(pdMS_TO_TICKS(30));
     }
 }
 

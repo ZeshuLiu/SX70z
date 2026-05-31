@@ -33,13 +33,14 @@ idf.py -p <PORT> erase-flash flash monitor
 
 ```
 Core 0:  WiFi 协议栈 + NimBLE BLE + HTTP Server (OTA Web) + 事件回调 + app_main
-Core 1:  相机控制（与射频中断隔离），3 个任务按优先级分层：
+Core 1:  相机控制（与射频中断隔离），4 个任务按优先级分层：
          Shutter Task  prio 10  强时序引脚控制（平时阻塞，触发后独占 Core 1）
-         Control Task  prio 8   主控逻辑（按键/显示/状态机）
+         Control Task  prio 8   主控逻辑（按键/闪光/S1，30ms 周期）
+         Display Task  prio 5   SSD1306 I2C 刷屏（200ms 周期，与按键解耦）
          Metering Task prio 3   后台测光（OPT4001，1s 周期）
 ```
 
-**优先级定义**见 `camera_main.h`：`SHUTTER_TASK_PRIO=10`, `CONTROL_TASK_PRIO=8`, `METERING_TASK_PRIO=3`
+**优先级定义**见 `camera_main.h`：`SHUTTER_TASK_PRIO=10`, `CONTROL_TASK_PRIO=8`, `DISPLAY_TASK_PRIO=5`, `METERING_TASK_PRIO=3`
 
 **Shutter Task 独占机制**：优先级最高 + 忙等不释放 CPU，保证时序不受其他任务抢占。通过 `xTaskNotifyGive` 触发，执行完回到 `ulTaskNotifyTake` 阻塞。未来快门/电机等几十秒的强时序工作均在此任务完成。
 
@@ -85,9 +86,10 @@ app_main() [Core 0]
      └─ control_task() 内部：
         ├─ SSD1306 初始化（esp_lcd 官方驱动, 128×32） + PCF8575 初始化
         ├─ 创建 metering_task (prio 3) — OPT4001 初始化 + 1s 周期测光
+        ├─ 创建 display_task (prio 5) — OLED 200ms 周期 I2C 刷屏
         ├─ 初始化 GPTimer — us 级精确定时 (1MHz, intr_priority=1 绑定 Core 1)
         ├─ 创建 shutter_task (prio 10) — 平时阻塞，xTaskNotifyGive 触发
-        └─ 主循环：S2 检测 + AUTO 快门更新 + LED 闪烁 (100ms)
+        └─ 主循环：按键 + S2 + S1T (30ms 周期，无 I2C 阻塞)
   9. app_main 空闲循环（打印 RSSI 等辅助信息）
 ```
 

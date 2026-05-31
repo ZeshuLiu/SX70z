@@ -7,7 +7,8 @@
 
 /** 任务优先级 */
 #define SHUTTER_TASK_PRIO    10  // 强时序任务：最高优先级，阻塞所有 Core 1 任务
-#define CONTROL_TASK_PRIO   8   // 控制任务：高优先级（时序敏感）
+#define CONTROL_TASK_PRIO   8   // 控制任务：按键/闪光/S1（时序敏感）
+#define DISPLAY_TASK_PRIO   5   // 显示任务：I2C 刷屏（与控制解耦，避免阻塞按键）
 #define METERING_TASK_PRIO  3   // 测光任务：低优先级（1s 周期）
 
 /** 系统窗口衰减系数 — 校准 OPT4001 读数以匹配真实场景照度
