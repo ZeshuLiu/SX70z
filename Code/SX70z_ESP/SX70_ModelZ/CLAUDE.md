@@ -192,7 +192,7 @@ IP_EVENT_STA_GOT_IP → ota_web_start()
 
 ### 快门控制 (Shutter Expose)
 
-完整移植自 `SX70Mk2/camera/shutter.c` 的 `shutter_expose()`，运行在 `shutter_task` (prio 10)：
+快门曝光时序，运行在 `shutter_task` (prio 10)：
 
 ```
 1. 关快门 (SOL1 high, 30ms)
