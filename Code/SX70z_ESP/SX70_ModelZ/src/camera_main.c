@@ -629,7 +629,12 @@ void control_task(void *pvParameters)
         if (flash_debounce >= 8) {
             camera_state.shut_mode = '0';  // 闪光灯模式
         } else if (flash_debounce <= 2) {
-            camera_state.shut_mode = '1';  // 普通模式
+            // 无闪光灯：根据菜单设置快门模式
+            switch (camera_state.menu) {
+                case 1: camera_state.shut_mode = 'B'; break;  // B 门
+                case 2: camera_state.shut_mode = 'T'; break;  // T 门
+                default: camera_state.shut_mode = '1'; break; // 普通
+            }
         }
 
         // S1 去抖读取
