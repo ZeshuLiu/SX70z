@@ -1,7 +1,7 @@
 # SX-70z
 
 ## 介绍
-<img src="pics/Camera1.jpg" alt="机身照片" style="zoom:10%;" />
+<img src="pics/Camera1.jpg" alt="机身照片" style="zoom:4%;" />
 
 ### 项目组成
 项目中包含几个部分的硬件：
