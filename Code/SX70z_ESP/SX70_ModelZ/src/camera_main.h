@@ -38,6 +38,7 @@ typedef struct {
 // 相机参数
 typedef struct {
     bool if_display;            // OLED 是否可用
+    bool has_flash;             // 闪光灯是否接入（control_task 统一检测）
 
     metering_state_t metering;  // 测光
     button_state_t button;      // 按键

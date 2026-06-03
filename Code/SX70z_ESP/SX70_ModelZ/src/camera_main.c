@@ -108,6 +108,7 @@ camera_state_t camera_state = {
     .shut_mode = '1',
     .shutter_speed = 4,  // 1s
     .test_led_level = false,
+    .has_flash = false,
 };
 
 /* ---- 快门速度表（移植自 SX70Mk2 metering.c） ---- */
@@ -258,18 +259,22 @@ static void read_3d_button_pins(char *result)
     result[3] = '\0';
 }
 
-// 更新 cam_mode 字符串
+// 更新 cam_mode 字符串 + shut_mode
 static void update_mode_display(void)
 {
     if (camera_state.menu == 0) {
         snprintf(camera_state.cam_mode, sizeof(camera_state.cam_mode), "AUTO");
+        camera_state.shut_mode = '1';
     } else if (camera_state.menu == 1) {
         snprintf(camera_state.cam_mode, sizeof(camera_state.cam_mode), "B");
+        camera_state.shut_mode = 'B';
     } else if (camera_state.menu == 2) {
         snprintf(camera_state.cam_mode, sizeof(camera_state.cam_mode), "T");
+        camera_state.shut_mode = 'T';
     } else if (camera_state.menu == 3) {
         snprintf(camera_state.cam_mode, sizeof(camera_state.cam_mode), "%s",
                 get_shutter_speed(camera_state.shutter_speed));
+        camera_state.shut_mode = '1';
     } else if (camera_state.menu == 10) {
         snprintf(camera_state.cam_mode, sizeof(camera_state.cam_mode), "---");
     }
@@ -427,6 +432,7 @@ static void shutter_task(void *pvParameters)
 
         uint16_t shutter_delay_x10 = get_shutter_time_x10(camera_state.shutter_speed);
         char mode = camera_state.shut_mode;
+        bool use_flash = camera_state.has_flash;
 
         // 关闭 LED
         gpio_set_level(LED1_PIN, 1);
@@ -450,7 +456,8 @@ static void shutter_task(void *pvParameters)
         ESP_LOGI(TAG, "Motor stopped");
 
         // ---- 3. Y Delay ----
-        if (mode == '0') {  // SHUTTER_FLASH
+        // if (mode == '0') {  // SHUTTER_FLASH
+        if (use_flash) {  // SHUTTER_FLASH
             sol2_engage();
             ESP_LOGI(TAG, "Aperture engaged");
         }
@@ -460,29 +467,37 @@ static void shutter_task(void *pvParameters)
         ESP_LOGI(TAG, "Exposure: mode=%c, delay=%d (0.1ms)", mode, shutter_delay_x10);
 
         if (mode == '1') {  // SHUTTER_NORMAL
-            sol1_release();                               // shutter_open
-            delay_us((uint32_t)shutter_delay_x10 * 100);  // 0.1ms → us
-            sol1_pull();                                  // 100% 吸合
-            delay_us(30000);                               // 30ms
-            sol1_hold();                                  // 40% 保持
+            if(!use_flash){
+                sol1_release();                               // shutter_open
+                delay_us((uint32_t)shutter_delay_x10 * 100);  // 0.1ms → us
+                // sol1_pull();                                  // 100% 吸合
+            }
+            else{
+                int gap = (int)shutter_delay_x10 - 470;
+                if (gap < 0) gap = 0;
 
-        } else if (mode == '0') {  // SHUTTER_FLASH
-            int gap = (int)shutter_delay_x10 - 470;
-            if (gap < 0) gap = 0;
+                sol1_release();               // shutter_open
+                delay_us(47000);              // 47ms
 
-            sol1_release();               // shutter_open
-            delay_us(47000);              // 47ms
+                gpio_set_level(FF_PIN, 1);     // 触发闪光灯
+                delay_us(1000);                // 1ms
+                gpio_set_level(FF_PIN, 0);
+                delay_us((uint32_t)gap * 100); // 剩余延时
 
-            gpio_set_level(FF_PIN, 1);     // 触发闪光灯
-            delay_us(1000);                // 1ms
-            gpio_set_level(FF_PIN, 0);
-            delay_us((uint32_t)gap * 100); // 剩余延时
-
-            sol1_pull();                  // 100% 吸合
-
+                // sol1_pull();                  // 100% 吸合
+            }
+            // delay_us(30000);                               // 30ms
+            // sol1_hold();                                  // 40% 保持
         } else if (mode == 'B') {  // SHUTTER_BULB
             sol1_release();               // shutter_open
             delay_us(15000);              // 15ms
+
+            if (use_flash){
+                delay_us(32000);
+                gpio_set_level(FF_PIN, 1);     // 触发闪光灯
+                delay_us(1000);                // 1ms
+                gpio_set_level(FF_PIN, 0);
+            }
 
             // 等待 S1T 释放
             while (gpio_get_level(S1T_PIN) == 0) {
@@ -491,6 +506,13 @@ static void shutter_task(void *pvParameters)
 
         } else if (mode == 'T') {  // SHUTTER_TIME
             sol1_release();               // shutter_open
+
+            if (use_flash){
+                delay_us(47000);
+                gpio_set_level(FF_PIN, 1);     // 触发闪光灯
+                delay_us(1000);                // 1ms
+                gpio_set_level(FF_PIN, 0);
+            }
 
             // 等待 S1T 释放
             while (gpio_get_level(S1T_PIN) == 0) {
@@ -510,7 +532,7 @@ static void shutter_task(void *pvParameters)
         delay_us(18000);                // 18ms
 
         // ---- 6. 光圈归位 ----
-        if (mode == '0') {  // SHUTTER_FLASH
+        if (use_flash) {  // SHUTTER_FLASH
             sol2_disengage();
             ESP_LOGI(TAG, "Aperture disengaged");
         }
@@ -617,25 +639,17 @@ void control_task(void *pvParameters)
     while (1) {
         // 3D 按键处理
         button3d_handler();
+        update_mode_display();
 
         // 闪光灯检测（带防抖）
         static int flash_debounce = 0;
-        bool flash_connected = (gpio_get_level(S2_PIN) == 0);
-        if (flash_connected) {
+        bool flash_level = (gpio_get_level(S2_PIN) == 0);
+        if (flash_level) {
             flash_debounce = (flash_debounce < 10) ? flash_debounce + 1 : 10;
         } else {
             flash_debounce = (flash_debounce > 0) ? flash_debounce - 1 : 0;
         }
-        if (flash_debounce >= 8) {
-            camera_state.shut_mode = '0';  // 闪光灯模式
-        } else if (flash_debounce <= 2) {
-            // 无闪光灯：根据菜单设置快门模式
-            switch (camera_state.menu) {
-                case 1: camera_state.shut_mode = 'B'; break;  // B 门
-                case 2: camera_state.shut_mode = 'T'; break;  // T 门
-                default: camera_state.shut_mode = '1'; break; // 普通
-            }
-        }
+        camera_state.has_flash = (flash_debounce >= 8);
 
         // S1 去抖读取
         debounce_read_s1pin();
@@ -643,12 +657,12 @@ void control_task(void *pvParameters)
 
         // S1T 全按快门 → 触发快门任务（参考 if s1t_pressed == 1）
         if (! s1t_pressed) {
-            if (camera_state.menu != 10) {
+            if (camera_state.menu < 10) {
                 // AUTO 模式：自动选择测光计算的快门速度
                 if (camera_state.menu == 0) {
                     camera_state.shutter_speed = camera_state.metering.auto_shutter_pos;
                     // 闪光灯同步：有闪光灯时固定 1/30s
-                    if (camera_state.shut_mode == '0') {
+                    if (camera_state.has_flash) {
                         camera_state.shutter_speed = 13;  // 1/30s
                     }
                 }
@@ -659,7 +673,7 @@ void control_task(void *pvParameters)
         static int ctrl_log_cnt = 0;
         if (++ctrl_log_cnt % 16 == 0) {
             ESP_LOGI(TAG, "S1T=%d Flash=%d Mode=%s LUX=%.2f",
-                    s1t_pressed, flash_connected,
+                    s1t_pressed, camera_state.has_flash,
                     camera_state.cam_mode, camera_state.metering.last_lux);
         }
 

@@ -1,7 +1,5 @@
 #include "display_manager.h"
 #include "fonts/font5x8.h"
-#include "PIN.h"
-#include "driver/gpio.h"
 #include <stdio.h>
 #include <math.h>
 
@@ -25,8 +23,7 @@ void display_show_frame(const camera_state_t *state, ssd1306_t *disp)
 
     // 闪光灯指示
     ssd1306_clear_rect(disp, 82, 0, 1, 11);   // 分隔线
-    bool flash_connected = (gpio_get_level(S2_PIN) == 0);
-    if (flash_connected) {
+    if (state->has_flash) {
         ssd1306_draw_str(disp, 86, 2, "FLASH", &font5x8_font);
     } else {
         ssd1306_draw_str(disp, 90, 2, "OFF", &font5x8_font);
