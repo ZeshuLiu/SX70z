@@ -18,6 +18,8 @@ static const char *TAG = "camera";
 #define HAS_FOCUS 0  // TODO: 对焦功能待实现
 
 TaskHandle_t control_task_handle = NULL;
+static TaskHandle_t display_task_handle = NULL;
+static TaskHandle_t metering_task_handle = NULL;
 
 ssd1306_t display;
 pcf8575_t gpio_expander;
@@ -109,10 +111,15 @@ camera_state_t camera_state = {
     .shutter_speed = 4,  // 1s
     .test_led_level = false,
     .has_flash = false,
+    .self_timer_sec = 0,
 };
 
 /* ---- 快门速度表（移植自 SX70Mk2 metering.c） ---- */
 #define SHUTTER_SPEED_COUNT 27
+
+// 自拍定时选项：0/2/5/10s
+static const uint8_t self_timer_opts[] = {0, 2, 5, 10};
+#define SELF_TIMER_OPTS_COUNT 4
 
 static const char *shutter_speeds[] = {
     "3s", "2.5s", "2s", "1.5s", "1s",
@@ -280,7 +287,7 @@ static void update_mode_display(void)
     }
 }
 
-// 下键按下：M 档快门速度递减
+// 下键按下：M 档快门速度递减 / 自拍定时递减
 static void down_button_call(void)
 {
     if (camera_state.menu == 3) {  // M 档
@@ -288,6 +295,13 @@ static void down_button_call(void)
             camera_state.shutter_speed = SHUTTER_SPEED_COUNT - 1;
         } else {
             camera_state.shutter_speed--;
+        }
+    } else if (camera_state.menu == 10) {
+        for (int i = 0; i < SELF_TIMER_OPTS_COUNT; i++) {
+            if (self_timer_opts[i] == camera_state.self_timer_sec) {
+                camera_state.self_timer_sec = self_timer_opts[(i - 1 + SELF_TIMER_OPTS_COUNT) % SELF_TIMER_OPTS_COUNT];
+                break;
+            }
         }
     }
     update_mode_display();
@@ -298,6 +312,13 @@ static void up_button_call(void)
 {
     if (camera_state.menu == 3) {  // M 档
         camera_state.shutter_speed = (camera_state.shutter_speed + 1) % SHUTTER_SPEED_COUNT;
+    } else if (camera_state.menu == 10) {
+        for (int i = 0; i < SELF_TIMER_OPTS_COUNT; i++) {
+            if (self_timer_opts[i] == camera_state.self_timer_sec) {
+                camera_state.self_timer_sec = self_timer_opts[(i + 1) % SELF_TIMER_OPTS_COUNT];
+                break;
+            }
+        }
     }
     update_mode_display();
 }
@@ -417,9 +438,22 @@ static void shutter_task(void *pvParameters)
         ESP_LOGI(TAG, "Taking picture...");
 
         // 检查是否在拍摄模式（menu 10 = 自拍定时）
-        if (camera_state.menu == 10) {
-            ESP_LOGI(TAG, "Not in shooting mode (self-timer)");
+        if (camera_state.menu >= 10) {
+            ESP_LOGI(TAG, "Not in shooting mode (Manuel)");
             continue;
+        }
+
+        if (camera_state.self_timer_sec > 0) {
+            if (control_task_handle) vTaskSuspend(control_task_handle);
+            if (display_task_handle) vTaskSuspend(display_task_handle);
+            if (metering_task_handle) vTaskSuspend(metering_task_handle);
+            for (int remain = camera_state.self_timer_sec; remain > 0; remain--) {
+                display_show_countdown(&display, remain);
+                delay_us(1000000);
+            }
+            if (metering_task_handle) vTaskResume(metering_task_handle);
+            if (display_task_handle) vTaskResume(display_task_handle);
+            if (control_task_handle) vTaskResume(control_task_handle);
         }
 
 #if HAS_FOCUS
@@ -568,7 +602,7 @@ void control_task(void *pvParameters)
         ESP_LOGI(TAG, "SSD1306 initialized");
         /* ---- 启动显示任务（Core 1，中优先级） ---- */
         xTaskCreatePinnedToCore(display_task, "display", 2048, NULL,
-                                DISPLAY_TASK_PRIO, NULL, 1);
+                                DISPLAY_TASK_PRIO, &display_task_handle, 1);
     } else {
         ESP_LOGE(TAG, "SSD1306 init failed");
     }
@@ -584,7 +618,7 @@ void control_task(void *pvParameters)
 
     /* ---- 启动测光任务（Core 1，低优先级） ---- */
     xTaskCreatePinnedToCore(metering_task, "metering", 2048, NULL,
-                            METERING_TASK_PRIO, NULL, 1);
+                            METERING_TASK_PRIO, &metering_task_handle, 1);
 
     /* ---- 初始化 us 级精确定时器（GPTimer，ISR 绑定 Core 1） ---- */
     gptimer_config_t tcfg = {

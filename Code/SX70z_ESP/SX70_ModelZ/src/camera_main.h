@@ -47,6 +47,7 @@ typedef struct {
     char cam_mode[8];           // 当前模式字符串
     char shut_mode;             // 快门模式：'0'=闪光，'1'=正常，'B'=B 门，'T'=T 门
     uint8_t shutter_speed;      // 当前快门速度索引
+    uint8_t self_timer_sec;     // 自拍定时设置值：0/2/5/10
 
     bool test_led_level;        // LED 测试电平
 } camera_state_t;

@@ -29,14 +29,27 @@ void display_show_frame(const camera_state_t *state, ssd1306_t *disp)
         ssd1306_draw_str(disp, 90, 2, "OFF", &font5x8_font);
     }
 
-    // 快门速度大字（AUTO 模式下实时显示测光结果）
-    {
+    // 快门速度大字（AUTO 模式下实时显示测光结果）/ 自拍定时
+    if (state->menu == 10) {
+        if (state->self_timer_sec > 0) {
+            char buf[8];
+            snprintf(buf, sizeof(buf), "%ds", state->self_timer_sec);
+            ssd1306_draw_str(disp, 8, 18, buf, &font5x8_font);
+        } else {
+            ssd1306_draw_str(disp, 8, 18, "OFF", &font5x8_font);
+        }
+    } else {
         uint8_t disp_index = (state->menu == 0)
             ? state->metering.auto_shutter_pos
             : state->shutter_speed;
-        ssd1306_draw_str(disp, 8, 18,
-                        get_shutter_speed(disp_index),
-                        &font5x8_font);
+        const char *speed_str = get_shutter_speed(disp_index);
+        if (state->self_timer_sec > 0) {
+            char buf[16];
+            snprintf(buf, sizeof(buf), "%s %ds", speed_str, state->self_timer_sec);
+            ssd1306_draw_str(disp, 8, 18, buf, &font5x8_font);
+        } else {
+            ssd1306_draw_str(disp, 8, 18, speed_str, &font5x8_font);
+        }
     }
 
     // 测光值（右下角，LUX 自适应小数位: 总数 6 位）
@@ -53,5 +66,16 @@ void display_show_frame(const camera_state_t *state, ssd1306_t *disp)
         ssd1306_draw_str(disp, 50, 24, info_str, &font5x8_font);
     }
 
+    ssd1306_show(disp);
+}
+
+void display_show_countdown(ssd1306_t *disp, int8_t seconds_remaining)
+{
+    if (seconds_remaining < 0) return;
+    ssd1306_clear(disp);
+    char buf[8];
+    snprintf(buf, sizeof(buf), "%ds", seconds_remaining);
+    // 居中显示（5×8 字体，"10s" 最宽约 30px）
+    ssd1306_draw_str(disp, 56, 12, buf, &font5x8_font);
     ssd1306_show(disp);
 }
