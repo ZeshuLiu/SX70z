@@ -1,3 +1,5 @@
+/* camera_main.c - 相机主控：任务调度、曝光时序、快门/电磁铁控制 */
+
 #include "camera_main.h"
 #include "display_manager.h"
 #include "gpio_inputs.h"

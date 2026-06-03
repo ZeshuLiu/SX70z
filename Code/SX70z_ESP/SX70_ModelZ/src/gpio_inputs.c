@@ -1,3 +1,5 @@
+/* gpio_inputs.c - GPIO 输入处理：S1/S2 去抖、3D 按键、菜单/模式切换 */
+
 #include "gpio_inputs.h"
 #include "camera_main.h"
 #include "pcf8575.h"

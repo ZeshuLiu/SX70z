@@ -1,3 +1,5 @@
+/* display_manager.c - OLED 显示帧绘制：模式/快门/测光信息布局 + 倒计时显示 */
+
 #include "display_manager.h"
 #include "fonts/font5x8.h"
 #include <stdio.h>

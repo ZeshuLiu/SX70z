@@ -1,3 +1,5 @@
+/* devinfo.c - 设备信息：序列号（MAC 地址）、固件版本、硬件版本 */
+
 #include <stdio.h>
 #include "devinfo.h"
 #include "esp_mac.h"

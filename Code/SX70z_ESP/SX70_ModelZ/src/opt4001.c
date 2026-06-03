@@ -1,3 +1,5 @@
+/* opt4001.c - OPT4001 环境光传感器 I2C 驱动：读取 lux、自动量程 */
+
 #include "opt4001.h"
 #include <driver/i2c.h>
 #include <esp_log.h>
