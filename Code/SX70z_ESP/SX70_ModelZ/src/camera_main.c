@@ -443,18 +443,18 @@ static void shutter_task(void *pvParameters)
             continue;
         }
 
-        if (camera_state.self_timer_sec > 0) {
-            if (control_task_handle) vTaskSuspend(control_task_handle);
-            if (display_task_handle) vTaskSuspend(display_task_handle);
-            if (metering_task_handle) vTaskSuspend(metering_task_handle);
-            for (int remain = camera_state.self_timer_sec; remain > 0; remain--) {
-                display_show_countdown(&display, remain);
-                delay_us(1000000);
-            }
-            if (metering_task_handle) vTaskResume(metering_task_handle);
-            if (display_task_handle) vTaskResume(display_task_handle);
-            if (control_task_handle) vTaskResume(control_task_handle);
-        }
+        // if (camera_state.self_timer_sec > 0) {
+        //     if (control_task_handle) vTaskSuspend(control_task_handle);
+        //     if (display_task_handle) vTaskSuspend(display_task_handle);
+        //     if (metering_task_handle) vTaskSuspend(metering_task_handle);
+        //     for (int remain = camera_state.self_timer_sec; remain > 0; remain--) {
+        //         display_show_countdown(&display, remain);
+        //         delay_us(1000000);
+        //     }
+        //     if (metering_task_handle) vTaskResume(metering_task_handle);
+        //     if (display_task_handle) vTaskResume(display_task_handle);
+        //     if (control_task_handle) vTaskResume(control_task_handle);
+        // }
 
 #if HAS_FOCUS
         if (!camera_state.if_focused) {
@@ -490,7 +490,19 @@ static void shutter_task(void *pvParameters)
         ESP_LOGI(TAG, "Motor stopped");
 
         // ---- 3. Y Delay ----
-        // if (mode == '0') {  // SHUTTER_FLASH
+        if (camera_state.self_timer_sec > 0) {
+            if (control_task_handle) vTaskSuspend(control_task_handle);
+            if (display_task_handle) vTaskSuspend(display_task_handle);
+            if (metering_task_handle) vTaskSuspend(metering_task_handle);
+            for (int remain = camera_state.self_timer_sec; remain > 0; remain--) {
+                display_show_countdown(&display, remain);
+                delay_us(1000000);
+            }
+            if (metering_task_handle) vTaskResume(metering_task_handle);
+            if (display_task_handle) vTaskResume(display_task_handle);
+            if (control_task_handle) vTaskResume(control_task_handle);
+        }
+
         if (use_flash) {  // SHUTTER_FLASH
             sol2_engage();
             ESP_LOGI(TAG, "Aperture engaged");
