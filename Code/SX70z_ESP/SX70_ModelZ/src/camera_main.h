@@ -11,12 +11,20 @@
 #define DISPLAY_TASK_PRIO   5   // 显示任务：I2C 刷屏（与控制解耦，避免阻塞按键）
 #define METERING_TASK_PRIO  3   // 测光任务：低优先级（1s 周期）
 
-/** 系统窗口衰减系数 — 校准 OPT4001 读数以匹配真实场景照度
- *  raw_lux × METERING_ATTEN_K = 标定后 lux
- *  大于 1.0 = 补偿衰减，小于 1.0 = 抑制过曝
- *  调试方法：用独立测光表对比，调整此值直到 EV 读数一致
- */
+/** 电磁铁 PWM 占空比（LEDC 8-bit, 31.25kHz） */
+#define SOL1_DUTY_FULL  255   // SOL1 快门 100% 吸合
+#define SOL1_DUTY_HOLD  102   // SOL1 快门 40% 保持
+#define SOL2_DUTY_ON    255   // SOL2 光圈吸合
+#define SOL2_DUTY_OFF   0     // SOL2 光圈释放
+
+/** 系统窗口衰减系数 — 校准 OPT4001 读数以匹配真实场景照度 */
 #define METERING_ATTEN_K  256.0f
+
+/** 快门速度档位总数 */
+#define SHUTTER_SPEED_COUNT 27
+
+/** 功能开关 */
+#define HAS_FOCUS 0  // 对焦功能待实现
 
 // 测光参数
 typedef struct {
@@ -73,3 +81,6 @@ uint16_t get_shutter_time_x10(uint8_t index);
 
 /** 根据校准后 EV 计算快门速度索引 (F/8) */
 uint8_t calc_shutter_from_ev(float ev);
+
+/** GPTimer 微秒级延时（Core 1 忙等，不释放 CPU） */
+void delay_us(uint32_t us);
