@@ -235,6 +235,8 @@ camera_state_t
 │   ├── debounce_last           防抖计时 (ms)
 │   └── push_down_start         按下计时 (ms)
 ├── menu / cam_mode / shut_mode / shutter_speed  曝光/模式参数
+├── has_flash                    闪光灯是否接入（control_task 防抖检测）
+├── self_timer_sec               自拍定时设置值（0/2/5/10s）
 └── test_led_level              调试 LED 电平（仅 OLED 不可用时闪烁）
 ```
 
@@ -247,10 +249,10 @@ camera_state_t
 **核心函数**：
 - `read_3d_button_pins(char *result)` — 读 PCF8575 16 位状态，提取按键位到 `"101"` 字符串
 - `button3d_handler()` — 100ms 防抖 + 下降沿/上升沿检测 + 长短按区分（>1000ms）
-- `down_button_call()` — M 档快门速度递减（环形，0→26→0）
-- `up_button_call()` — M 档快门速度递增
+- `down_button_call()` — M 档快门速度递减 / menu=10 定时值递减（0→10→5→2→0）
+- `up_button_call()` — M 档快门速度递增 / menu=10 定时值递增（0→2→5→10→0）
 - `push_button_short()` — 菜单循环：AUTO(0)→BULB(1)→TIME(2)→MANUAL(3)→AUTO(0)
-- `push_button_long()` — 进入/退出自拍定时（menu=10）
+- `push_button_long()` — 进入/退出自拍定时（menu=10）。退出时 self_timer_sec 值保留
 - `update_mode_display()` — 根据 `menu` 更新 `cam_mode` 字符串
 
 **菜单结构**：
@@ -260,7 +262,7 @@ camera_state_t
 | 1 | BULB | "B" | B 门（S1T 释放结束） |
 | 2 | TIME | "T" | T 门（S1T 按两次） |
 | 3 | MANUAL | 快门速度字符串 | 手动选择（上/下键） |
-| 10 | 自拍定时 | "---" | 禁止拍摄 |
+| 10 | 自拍定时 | "---" | 定时值设置（上/下键循环 0→2→5→10s） |
 
 **主循环调用**：`control_task` 每 100ms 调 `button3d_handler()`，在闪光灯检测之前。
 
@@ -281,6 +283,24 @@ camera_state_t
 xTaskNotifyGive(shutter_task_handle);
 // shutter_task 立即抢占 Core 1，执行完回到阻塞态
 ```
+
+### 自拍定时
+
+**设置**（`menu=10`）：
+- 上/下键在 `{0, 2, 5, 10}` 四档间循环，值存储在 `camera_state.self_timer_sec`
+- OLED：快门速度位置（y=18）显示 `"OFF"` / `"2s"` / `"5s"` / `"10s"`
+
+**倒计时流程**（`shutter_task` 曝光前）：
+1. `self_timer_sec > 0` 时，先 suspend control/display/metering 三个任务
+2. 每秒调 `display_show_countdown()` 在 OLED 居中显示剩余秒数
+3. `delay_us(1000000)` 忙等 1s
+4. 倒计时结束后 resume 三个任务，进入正常曝光流程
+
+**辅助函数**：
+- `display_show_countdown(disp, seconds_remaining)` — 清屏后居中显示 `"5s"`，秒数为负数时直接返回
+- `self_timer_opts[] = {0, 2, 5, 10}` — 定时选项表
+
+**正常模式显示** — `self_timer_sec > 0` 时快门速度后追加定时值：`"1/125 5s"`、`"AUTO 2s"`
 
 ### 测光标定与曝光计算
 
@@ -327,7 +347,7 @@ xTaskNotifyGive(shutter_task_handle);
 2. `control_task` 检测 S1T + `menu==0` → `shutter_speed = auto_shutter_pos`
 3. `shutter_task` 用 `shutter_speed` 查 `shutter_times_x10` 表获得曝光时间
 
-**全模式 EV/LUX 显示**（`display_manager.c`）：OLED 右下角显示 `EV13.6 L430.12`，LUX 小数位自适应（6 位总宽，整数位多则小数少）。快门速度大字在 AUTO 模式实时反映测光结果。
+**全模式 EV/LUX 显示**（`display_manager.c`）：OLED 右下角显示 `EV13.6 L430.12`，LUX 小数位自适应（6 位总宽，整数位多则小数少）。快门速度大字在 AUTO 模式实时反映测光结果。`self_timer_sec > 0` 时快门速度后追加定时值（如 `"1/125 5s"`），menu=10 时显示定时值或 `"OFF"`。
 
 非 AUTO 模式（BULB/TIME/MANUAL）下 `shutter_speed` 由用户手动选择，不受测光影响。
 
