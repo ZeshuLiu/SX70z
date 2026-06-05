@@ -109,6 +109,7 @@ camera_state_t camera_state = {
     .test_led_level = false,
     .has_flash = false,
     .self_timer_sec = 0,
+    .multi_exp_remain = 0
 };
 
 /* ---- 快门速度表（移植自 SX70Mk2 metering.c） ---- */
@@ -249,53 +250,11 @@ static void metering_task(void *pvParameters)
     }
 }
 
-/* ---- 快门任务（移植 SX70Mk2 shutter_expose 完整时序） ---- */
-static void shutter_task(void *pvParameters)
+
+// 单次曝光（步骤 3~6）：Y Delay → 自拍倒计时 → 曝光 → 关快门 → 光圈归位
+// 用于多重曝光时重复调用，不包含电机动作和吐片
+void single_shut(char mode, bool use_flash, uint16_t shutter_delay_x10)
 {
-    while (1) {
-        ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
-
-        ESP_LOGI(TAG, "Taking picture...");
-
-        // 检查是否在拍摄模式（menu 10 = 自拍定时）
-        if (camera_state.menu >= 10) {
-            ESP_LOGI(TAG, "Not in shooting mode (Manuel)");
-            continue;
-        }
-
-#if HAS_FOCUS
-        if (!camera_state.if_focused) {
-            do_focus(&camera_state.shut_mode, &camera_state.shutter_speed);
-        }
-#else
-        // TODO: 对焦功能待实现（需移植 do_focus / S1F_FBW_PIN）
-#endif
-
-        uint16_t shutter_delay_x10 = get_shutter_time_x10(camera_state.shutter_speed);
-        char mode = camera_state.shut_mode;
-        bool use_flash = camera_state.has_flash;
-
-        // 关闭 LED
-        gpio_set_level(LED1_PIN, 1);
-
-        // ---- 1. 关闭快门 ----
-        ESP_LOGD(TAG, "Shutter close");
-        sol1_pull();                    // 100% 吸合
-        delay_us(30000);                // 30ms
-        sol1_hold();                    // 40% 保持
-        ESP_LOGD(TAG, "Shutter closed");
-
-        // ---- 2. 电机启动，反光板上升 ----
-        gpio_set_level(MOTOR_PIN, 1);
-        ESP_LOGI(TAG, "Motor start (mirror up)");
-
-        // 等待反光板就位 (S3 变高, 5×7µs 防抖)
-        while (!gpio_debounce_defaultLow(S3_PIN)) {
-            delay_us(100);
-        }
-        gpio_set_level(MOTOR_PIN, 0);
-        ESP_LOGI(TAG, "Motor stopped");
-
         // ---- 3. Y Delay ----
         if (camera_state.self_timer_sec > 0) {
             if (control_task_handle) vTaskSuspend(control_task_handle);
@@ -388,6 +347,75 @@ static void shutter_task(void *pvParameters)
         if (use_flash) {  // SHUTTER_FLASH
             sol2_disengage();
             ESP_LOGI(TAG, "Aperture disengaged");
+        }
+}
+
+/* ---- 快门任务（移植 SX70Mk2 shutter_expose 完整时序） ---- */
+static void shutter_task(void *pvParameters)
+{
+    while (1) {
+        ulTaskNotifyTake(pdTRUE, portMAX_DELAY);    // 等待曝光开始
+
+        ESP_LOGI(TAG, "Taking picture...");
+
+        // 检查是否在拍摄模式（menu 10 = 自拍定时）
+        if (camera_state.menu >= 10) {
+            ESP_LOGI(TAG, "Not in shooting mode (Manuel)");
+            continue;
+        }
+
+#if HAS_FOCUS
+        if (!camera_state.if_focused) {
+            do_focus(&camera_state.shut_mode, &camera_state.shutter_speed);
+        }
+#else
+        // TODO: 对焦功能待实现（需移植 do_focus / S1F_FBW_PIN）
+#endif
+
+        uint16_t shutter_delay_x10 = get_shutter_time_x10(camera_state.shutter_speed);
+        char mode = camera_state.shut_mode;
+        bool use_flash = camera_state.has_flash;
+
+        // 关闭 LED
+        gpio_set_level(LED1_PIN, 1);
+
+        // ---- 1. 关闭快门 ----
+        ESP_LOGD(TAG, "Shutter close");
+        sol1_pull();                    // 100% 吸合
+        delay_us(30000);                // 30ms
+        sol1_hold();                    // 40% 保持
+        ESP_LOGD(TAG, "Shutter closed");
+
+        // ---- 2. 电机启动，反光板上升 ----
+        gpio_set_level(MOTOR_PIN, 1);
+        ESP_LOGI(TAG, "Motor start (mirror up)");
+
+        // 等待反光板就位 (S3 变高, 5×7µs 防抖)
+        while (!gpio_debounce_defaultLow(S3_PIN)) {
+            delay_us(100);
+        }
+        gpio_set_level(MOTOR_PIN, 0);
+        ESP_LOGI(TAG, "Motor stopped");
+
+        // 多重曝光循环：normal 模式仅执行 1 次
+        //   multi_exp_remain =  0 → 1 次正常曝光
+        //   multi_exp_remain =  N → 1 + N 次曝光（每次 S1T 触发）
+        //   multi_exp_remain = -1 → 不曝光，直接跳至步骤 7 吐片
+        while (true){
+            if(camera_state.multi_exp_remain == -1) break;
+
+            single_shut(mode, use_flash, shutter_delay_x10);
+
+            if (camera_state.multi_exp_remain == 0){
+                break;
+            }
+            else{
+                camera_state.multi_exp_remain -= 1;
+                ulTaskNotifyTake(pdTRUE, portMAX_DELAY);    // 等待曝光开始
+                shutter_delay_x10 = get_shutter_time_x10(camera_state.shutter_speed);
+                mode = camera_state.shut_mode;
+                use_flash = camera_state.has_flash;
+            }
         }
 
         // ---- 7. 电机启动吐片 ----
