@@ -253,7 +253,7 @@ static void metering_task(void *pvParameters)
 
 // 单次曝光（步骤 3~6）：Y Delay → 自拍倒计时 → 曝光 → 关快门 → 光圈归位
 // 用于多重曝光时重复调用，不包含电机动作和吐片
-void single_shut(char mode, bool use_flash, uint16_t shutter_delay_x10)
+static void single_shut(char mode, bool use_flash, uint16_t shutter_delay_x10)
 {
         // ---- 3. Y Delay ----
         if (camera_state.self_timer_sec > 0) {
@@ -397,25 +397,20 @@ static void shutter_task(void *pvParameters)
         gpio_set_level(MOTOR_PIN, 0);
         ESP_LOGI(TAG, "Motor stopped");
 
-        // 多重曝光循环：normal 模式仅执行 1 次
+        // 多重曝光：先拍第一张，再等 S1T 拍后续
         //   multi_exp_remain =  0 → 1 次正常曝光
         //   multi_exp_remain =  N → 1 + N 次曝光（每次 S1T 触发）
-        //   multi_exp_remain = -1 → 不曝光，直接跳至步骤 7 吐片
-        while (true){
-            if(camera_state.multi_exp_remain == -1) break;
+        //   multi_exp_remain = -1 → 同 0（仅 while 循环内检测用于中途中止）
+        single_shut(mode, use_flash, shutter_delay_x10);
 
+        while (camera_state.multi_exp_remain > 0) {
+            camera_state.multi_exp_remain--;
+            ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+            if (camera_state.multi_exp_remain == -1) break;
+            shutter_delay_x10 = get_shutter_time_x10(camera_state.shutter_speed);
+            mode = camera_state.shut_mode;
+            use_flash = camera_state.has_flash;
             single_shut(mode, use_flash, shutter_delay_x10);
-
-            if (camera_state.multi_exp_remain == 0){
-                break;
-            }
-            else{
-                camera_state.multi_exp_remain -= 1;
-                ulTaskNotifyTake(pdTRUE, portMAX_DELAY);    // 等待曝光开始
-                shutter_delay_x10 = get_shutter_time_x10(camera_state.shutter_speed);
-                mode = camera_state.shut_mode;
-                use_flash = camera_state.has_flash;
-            }
         }
 
         // ---- 7. 电机启动吐片 ----
