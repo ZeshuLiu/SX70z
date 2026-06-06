@@ -52,8 +52,8 @@ typedef struct {
     button_state_t button;      // 按键
 
     uint8_t menu;               // 菜单层级：0=AUTO, 1=BULB, 2=TIME, 3=MANUAL, 10=自拍
-    char cam_mode[8];           // 当前模式字符串
-    char shut_mode;             // 快门模式：'0'=闪光，'1'=正常，'B'=B 门，'T'=T 门
+    char cam_mode[10];           // 当前模式字符串
+    char shut_mode;             // 快门模式: '1'=正常, 'B'=B 门, 'T'=T 门
     uint8_t shutter_speed;      // 当前快门速度索引
     uint8_t self_timer_sec;     // 自拍定时设置值：0/2/5/10
     int8_t multi_exp_remain;    // 额外多重曝光张数：0=正常拍一张 N=正常拍N张，-1=仅中止（首张防护，仍拍1张）

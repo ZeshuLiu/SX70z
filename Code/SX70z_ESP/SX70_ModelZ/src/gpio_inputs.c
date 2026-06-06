@@ -94,7 +94,7 @@ void update_mode_display(void)
                 get_shutter_speed(camera_state.shutter_speed));
         camera_state.shut_mode = '1';
     } else if (camera_state.menu == 10) {
-        snprintf(camera_state.cam_mode, sizeof(camera_state.cam_mode), "---");
+        snprintf(camera_state.cam_mode, sizeof(camera_state.cam_mode), "Menu 0");
     }
 }
 
