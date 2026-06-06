@@ -5,6 +5,26 @@
 #include <stdio.h>
 #include <math.h>
 
+// 拍摄模式字段索引 → 坐标 + 字体映射（布局固定，内容由调用者提供）
+// 0: cam_mode  1: ISO  2: 闪光灯  3: 快门速度  4: 测光值
+typedef struct {
+    int16_t x, y;
+    const ssd1306_font_t *font;
+} field_t;
+
+static const field_t fields[] = {
+    {10,  2, &font5x8_font},  // 0: cam_mode
+    {55,  2, &font5x8_font},  // 1: ISO
+    {86,  2, &font5x8_font},  // 2: 闪光灯
+    { 8, 18, &font5x8_font},  // 3: 快门速度
+    {50, 24, &font5x8_font},  // 4: 测光值
+};
+
+static void draw_str_taking(ssd1306_t *disp, uint8_t index, const char *str)
+{
+    ssd1306_draw_str(disp, fields[index].x, fields[index].y, str, fields[index].font);
+}
+
 void display_show_frame(const camera_state_t *state, ssd1306_t *disp)
 {
     if (!state->if_display) return;
@@ -19,21 +39,7 @@ void display_show_frame(const camera_state_t *state, ssd1306_t *disp)
     ssd1306_clear_rect(disp, 82, 0, 1, 11);   // 闪光灯分隔线
 
     if (state->menu == 10) {
-        // 自拍定时设置
-        ssd1306_draw_str(disp, 10, 2, state->cam_mode, &font5x8_font);
-        ssd1306_draw_str(disp, 55, 2, "600", &font5x8_font);
-        if (state->has_flash) {
-            ssd1306_draw_str(disp, 86, 2, "FLASH", &font5x8_font);
-        } else {
-            ssd1306_draw_str(disp, 90, 2, "OFF", &font5x8_font);
-        }
-        if (state->self_timer_sec > 0) {
-            char buf[8];
-            snprintf(buf, sizeof(buf), "%ds", state->self_timer_sec);
-            ssd1306_draw_str(disp, 8, 18, buf, &font5x8_font);
-        } else {
-            ssd1306_draw_str(disp, 8, 18, "OFF", &font5x8_font);
-        }
+        display_show_menu(state, disp);
     } else if (state->menu < 10) {
         display_show_taking(state, disp);
     }
@@ -43,30 +49,19 @@ void display_show_frame(const camera_state_t *state, ssd1306_t *disp)
 
 void display_show_taking(const camera_state_t *state, ssd1306_t *disp)
 {
-    // 模式显示
-    ssd1306_draw_str(disp, 10, 2, state->cam_mode, &font5x8_font);
-
-    // ISO 显示
-    ssd1306_draw_str(disp, 55, 2, "600", &font5x8_font);
-
-    // 闪光灯指示
-    if (state->has_flash) {
-        ssd1306_draw_str(disp, 86, 2, "FLASH", &font5x8_font);
-    } else {
-        ssd1306_draw_str(disp, 90, 2, "OFF", &font5x8_font);
-    }
+    draw_str_taking(disp, 0, state->cam_mode);
+    draw_str_taking(disp, 1, "600");
+    draw_str_taking(disp, 2, state->has_flash ? "FLASH" : "OFF");
 
     // 快门速度大字（AUTO 模式下实时显示测光结果）/ 自拍定时标记
-    uint8_t disp_index = (state->menu == 0)
-        ? state->metering.auto_shutter_pos
-        : state->shutter_speed;
-    const char *speed_str = get_shutter_speed(disp_index);
+    const char *speed_str = get_shutter_speed(
+        (state->menu == 0) ? state->metering.auto_shutter_pos : state->shutter_speed);
     if (state->self_timer_sec > 0) {
         char buf[16];
         snprintf(buf, sizeof(buf), "%s %ds", speed_str, state->self_timer_sec);
-        ssd1306_draw_str(disp, 8, 18, buf, &font5x8_font);
+        draw_str_taking(disp, 3, buf);
     } else {
-        ssd1306_draw_str(disp, 8, 18, speed_str, &font5x8_font);
+        draw_str_taking(disp, 3, speed_str);
     }
 
     // 测光值（右下角，LUX 自适应小数位: 总数 6 位）
@@ -80,7 +75,21 @@ void display_show_taking(const camera_state_t *state, ssd1306_t *disp)
         if (decimals > 4) decimals = 4;
         snprintf(info_str, sizeof(info_str), "EV%.1f L%.*f",
                 (double)state->metering.ev, decimals, (double)lux);
-        ssd1306_draw_str(disp, 50, 24, info_str, &font5x8_font);
+        draw_str_taking(disp, 4, info_str);
+    }
+}
+
+void display_show_menu(const camera_state_t *state, ssd1306_t *disp)
+{
+    draw_str_taking(disp, 0, state->cam_mode);
+    draw_str_taking(disp, 1, "600");
+    draw_str_taking(disp, 2, state->has_flash ? "FLASH" : "OFF");
+    if (state->self_timer_sec > 0) {
+        char buf[8];
+        snprintf(buf, sizeof(buf), "%ds", state->self_timer_sec);
+        draw_str_taking(disp, 3, buf);
+    } else {
+        draw_str_taking(disp, 3, "OFF");
     }
 }
 
