@@ -80,34 +80,76 @@ static void read_3d_button_pins(char *result)
 // 更新 cam_mode 字符串 + shut_mode
 void update_mode_display(void)
 {
-    if (camera_state.menu == 0) {
+    if (camera_state.menu == MENU_AUTO) {
         snprintf(camera_state.cam_mode, sizeof(camera_state.cam_mode), "AUTO");
         camera_state.shut_mode = '1';
-    } else if (camera_state.menu == 1) {
-        snprintf(camera_state.cam_mode, sizeof(camera_state.cam_mode), "B");
-        camera_state.shut_mode = 'B';
-    } else if (camera_state.menu == 2) {
-        snprintf(camera_state.cam_mode, sizeof(camera_state.cam_mode), "T");
-        camera_state.shut_mode = 'T';
-    } else if (camera_state.menu == 3) {
+    } else if (camera_state.menu == MENU_BULB) {
+        // menu 1: B/T 合并，通过 time_mode 区分
+        if (camera_state.time_mode == 0) {
+            snprintf(camera_state.cam_mode, sizeof(camera_state.cam_mode), "B");
+            camera_state.shut_mode = 'B';
+        } else if (camera_state.time_mode == 1) {
+            snprintf(camera_state.cam_mode, sizeof(camera_state.cam_mode), "T");
+            camera_state.shut_mode = 'T';
+        } else {
+            // time_mode >= 2: 秒值延时，暂用 T 标记
+            snprintf(camera_state.cam_mode, sizeof(camera_state.cam_mode),
+                    "%us", camera_state.time_mode);
+            camera_state.shut_mode = 'T';
+        }
+    } else if (camera_state.menu == MENU_MANUAL) {
         snprintf(camera_state.cam_mode, sizeof(camera_state.cam_mode), "%s",
                 get_shutter_speed(camera_state.shutter_speed));
         camera_state.shut_mode = '1';
-    } else if (camera_state.menu == 10) {
+    } else if (camera_state.menu == MENU_SELF_TIMER) {
         snprintf(camera_state.cam_mode, sizeof(camera_state.cam_mode), "Menu 0");
     }
 }
 
-// 下键按下：M 档快门速度递减 / 自拍定时递减
+// 下键按下
+
+// time_mode 步进（上键方向）：0→1, ≤10→+1, ≤60→+5, ≤600→+30, ≤1800→+60,
+// ≤3600→+5min, ≤7200→+10min, 之后→+30min
+static uint16_t time_mode_next(uint16_t cur)
+{
+    uint16_t step;
+    if (cur < 10)   step = 1;
+    else if (cur < 60)   step = 5;
+    else if (cur < 600)  step = 30;
+    else if (cur < 1800) step = 60;
+    else if (cur < 3600) step = 300;
+    else if (cur < 7200) step = 600;
+    else step = 1800;
+
+    uint16_t next = cur + step;
+    if (next > 18000) return 0;  // 5h 上限，超过回绕到 0
+    return next;
+}
+
+// time_mode 步进（下键方向，反向）
+static uint16_t time_mode_prev(uint16_t cur)
+{
+    if (cur <= 0)   return 0;
+    if (cur == 1)   return 0;
+    if (cur <= 10)  return cur - 1;
+    if (cur <= 60)  return cur - 5;
+    if (cur <= 600) return cur - 30;
+    if (cur <= 1800) return cur - 60;
+    if (cur <= 3600) return cur - 300;
+    if (cur <= 7200) return cur - 600;
+    return cur - 1800;
+}
 static void down_button_call(void)
 {
-    if (camera_state.menu == 3) {  // M 档
+    if (camera_state.menu == MENU_BULB) {
+        camera_state.time_mode = time_mode_prev(camera_state.time_mode);
+    } else if (camera_state.menu == MENU_MANUAL) {
         if (camera_state.shutter_speed == 0) {
             camera_state.shutter_speed = SHUTTER_SPEED_COUNT - 1;
         } else {
             camera_state.shutter_speed--;
         }
-    } else if (camera_state.menu == 10) {
+    } else if (camera_state.menu == MENU_SELF_TIMER) {
         for (int i = 0; i < SELF_TIMER_OPTS_COUNT; i++) {
             if (self_timer_opts[i] == camera_state.self_timer_sec) {
                 camera_state.self_timer_sec = self_timer_opts[(i - 1 + SELF_TIMER_OPTS_COUNT) % SELF_TIMER_OPTS_COUNT];
@@ -118,12 +160,14 @@ static void down_button_call(void)
     update_mode_display();
 }
 
-// 上键按下：M 档快门递增 / 自拍定时递增
+// 上键按下
 static void up_button_call(void)
 {
-    if (camera_state.menu == 3) {  // M 档
+    if (camera_state.menu == MENU_BULB) {
+        camera_state.time_mode = time_mode_next(camera_state.time_mode);
+    } else if (camera_state.menu == MENU_MANUAL) {
         camera_state.shutter_speed = (camera_state.shutter_speed + 1) % SHUTTER_SPEED_COUNT;
-    } else if (camera_state.menu == 10) {
+    } else if (camera_state.menu == MENU_SELF_TIMER) {
         for (int i = 0; i < SELF_TIMER_OPTS_COUNT; i++) {
             if (self_timer_opts[i] == camera_state.self_timer_sec) {
                 camera_state.self_timer_sec = self_timer_opts[(i + 1) % SELF_TIMER_OPTS_COUNT];
@@ -137,17 +181,17 @@ static void up_button_call(void)
 // 短按"按下"键：菜单循环 AUTO→BULB→TIME→MANUAL→AUTO
 static void push_button_short(void)
 {
-    camera_state.menu = (camera_state.menu + 1) % 4;
+    if(camera_state.menu < 10) camera_state.menu = (camera_state.menu + 1) % MENU_COUNT;
     update_mode_display();
 }
 
 // 长按"按下"键：进入/退出自拍定时
 static void push_button_long(void)
 {
-    if (camera_state.menu < 10) {
-        camera_state.menu = 10;
+    if (camera_state.menu < MENU_SETTINGS_START) {
+        camera_state.menu = MENU_SELF_TIMER;
     } else {
-        camera_state.menu = 0;
+        camera_state.menu = MENU_AUTO;
     }
     update_mode_display();
 }

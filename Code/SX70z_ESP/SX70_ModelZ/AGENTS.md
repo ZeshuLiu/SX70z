@@ -63,7 +63,8 @@ SX70_ModelZ/
 │   ├── ssd1306.h / .c      # SSD1306 OLED 显示驱动（I2C1）
 │   ├── pcf8575.h / .c      # PCF8575 I2C GPIO 扩展（I2C1, 0x20-0x27）
 │   ├── font.h              # 字体类型定义
-│   ├── fonts/font5x8.h     # 5x8 像素字体
+│   ├── fonts/font5x8.h     # 5x8 像素字体（默认）
+│   ├── fonts/font5x8.c     # 5x8 字体数据（列式存储，每字符 5 字节）
 │   └── ota_web.h / .c      # HTTP 网页上传固件 OTA
 ├── components/             # ESP-IDF 标准组件目录（当前为空）
 ├── sdkconfig
@@ -189,6 +190,8 @@ IP_EVENT_STA_GOT_IP → ota_web_start()
 - 自维护本地帧缓冲 `dev->buff`（512 bytes），绘图 API 保留：`ssd1306_draw_str/line/rect/circle` 等
 - `ssd1306_show()` 通过 `esp_lcd_panel_draw_bitmap()` 全量刷新到屏幕
 - 字体使用 `font5x8_font`（5x8 像素，96 字符 ASCII）
+- **字体格式**：列式存储，每字符 `width` 字节（每字节 1 字列、8 像素高）。`ssd1306_draw_str` 目前只支持 8 像素高度字体（1 字节/列）
+- **TODO**：需要 12×16 或 16×16 大字体用于倒计时/正计时显示。需同时新增 `ssd1306_draw_str_large` 函数支持 2 字节/列（16 像素高）的渲染
 
 ### PCF8575 I2C GPIO 扩展
 

@@ -11,6 +11,7 @@
 #include "esp_log.h"
 #include "driver/gptimer.h"
 #include "driver/gpio.h"
+#include "esp_timer.h"
 #include "driver/ledc.h"
 #include "esp_task_wdt.h"
 #include <string.h>
@@ -102,8 +103,9 @@ camera_state_t camera_state = {
         .debounce_last = 0,
         .push_down_start = 0,
     },
-    .menu = 0,
+    .menu = MENU_AUTO,
     .cam_mode = "AUTO",
+    .time_mode = 0,
     .shut_mode = '1',
     .shutter_speed = 4,  // 1s
     .test_led_level = false,
@@ -250,6 +252,19 @@ static void metering_task(void *pvParameters)
     }
 }
 
+static void suspend_noshut_task()
+{
+    if (control_task_handle) vTaskSuspend(control_task_handle);
+    if (display_task_handle) vTaskSuspend(display_task_handle);
+    if (metering_task_handle) vTaskSuspend(metering_task_handle);
+}
+
+static void resums_noshut_task()
+{
+    if (metering_task_handle) vTaskResume(metering_task_handle);
+    if (display_task_handle) vTaskResume(display_task_handle);
+    if (control_task_handle) vTaskResume(control_task_handle);
+}
 
 // 单次曝光（步骤 3~6）：Y Delay → 自拍倒计时 → 曝光 → 关快门 → 光圈归位
 // 用于多重曝光时重复调用，不包含电机动作和吐片
@@ -257,16 +272,12 @@ static void single_shut(char mode, bool use_flash, uint16_t shutter_delay_x10)
 {
         // ---- 3. Y Delay ----
         if (camera_state.self_timer_sec > 0) {
-            if (control_task_handle) vTaskSuspend(control_task_handle);
-            if (display_task_handle) vTaskSuspend(display_task_handle);
-            if (metering_task_handle) vTaskSuspend(metering_task_handle);
+            suspend_noshut_task();
             for (int remain = camera_state.self_timer_sec; remain > 0; remain--) {
                 display_show_countdown(&display, remain);
                 delay_us(1000000);
             }
-            if (metering_task_handle) vTaskResume(metering_task_handle);
-            if (display_task_handle) vTaskResume(display_task_handle);
-            if (control_task_handle) vTaskResume(control_task_handle);
+            resums_noshut_task();
         }
 
         if (use_flash) {  // SHUTTER_FLASH
@@ -277,6 +288,7 @@ static void single_shut(char mode, bool use_flash, uint16_t shutter_delay_x10)
 
         // ---- 4. 曝光 ----
         ESP_LOGI(TAG, "Exposure: mode=%c, delay=%d (0.1ms)", mode, shutter_delay_x10);
+        suspend_noshut_task();
 
         if (mode == '1') {  // SHUTTER_NORMAL
             if(!use_flash){
@@ -311,9 +323,16 @@ static void single_shut(char mode, bool use_flash, uint16_t shutter_delay_x10)
                 gpio_set_level(FF_PIN, 0);
             }
 
-            // 等待 S1T 释放
+            // 等待 S1T 释放（正计时显示）
+            int64_t start = esp_timer_get_time();
+            uint32_t last_s = UINT32_MAX;
             while (gpio_get_level(S1T_PIN) == 0) {
-                delay_us(3000);
+                uint32_t cur_s = (esp_timer_get_time() - start) / 1000000;
+                if (cur_s != last_s) {
+                    last_s = cur_s;
+                    display_show_countdown(&display, (int8_t)cur_s);
+                }
+                vTaskDelay(pdMS_TO_TICKS(1));
             }
 
         } else if (mode == 'T') {  // SHUTTER_TIME
@@ -330,11 +349,32 @@ static void single_shut(char mode, bool use_flash, uint16_t shutter_delay_x10)
             while (gpio_get_level(S1T_PIN) == 0) {
                 delay_us(100);
             }
-            // 等待 S1T 再次按下
-            while (gpio_get_level(S1T_PIN) != 0) {
-                delay_us(3000);
+            // 等待 S1T 再次按下 或 定时超时
+            {
+                int64_t start = esp_timer_get_time();
+                uint64_t target = (camera_state.time_mode > 1)
+                    ? (uint64_t)camera_state.time_mode * 1000000ULL
+                    : UINT64_MAX;
+                bool is_countdown = (target != UINT64_MAX);
+                uint32_t last_s = UINT32_MAX;
+
+                while (esp_timer_get_time() - start < target &&
+                        gpio_get_level(S1T_PIN) != 0) {
+                    int64_t elapsed = esp_timer_get_time() - start;
+                    uint32_t cur_s = is_countdown
+                        ? (target - elapsed) / 1000000
+                        : elapsed / 1000000;
+
+                    if (cur_s != last_s) {
+                        last_s = cur_s;
+                        display_show_countdown(&display, (int8_t)cur_s);
+                    }
+                    delay_us(1000);
+                }
             }
+            
         }
+        resums_noshut_task();
 
         // ---- 5. 关闭快门，曝光结束 ----
         sol1_pull();                    // 100% 吸合
@@ -359,7 +399,7 @@ static void shutter_task(void *pvParameters)
         ESP_LOGI(TAG, "Taking picture...");
 
         // 检查是否在拍摄模式（menu 10 = 自拍定时）
-        if (camera_state.menu >= 10) {
+        if (camera_state.menu >= MENU_SETTINGS_START) {
             ESP_LOGI(TAG, "Not in shooting mode (Manuel)");
             continue;
         }
@@ -525,9 +565,9 @@ void control_task(void *pvParameters)
 
         // S1T 全按快门 → 触发快门任务（参考 if s1t_pressed == 1）
         if (! s1t_pressed) {
-            if (camera_state.menu < 10) {
+            if (camera_state.menu < MENU_SETTINGS_START) {
                 // AUTO 模式：自动选择测光计算的快门速度
-                if (camera_state.menu == 0) {
+                if (camera_state.menu == MENU_AUTO) {
                     camera_state.shutter_speed = camera_state.metering.auto_shutter_pos;
                     // 闪光灯同步：有闪光灯时固定 1/30s
                     if (camera_state.has_flash) {

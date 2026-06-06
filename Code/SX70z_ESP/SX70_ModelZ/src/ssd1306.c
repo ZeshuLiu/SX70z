@@ -39,11 +39,15 @@ static void fill_rect(ssd1306_t *dev, int16_t x_in, int16_t y_in,
 
 static void draw_char(ssd1306_t *dev, uint16_t x, uint16_t y, const char *chr,
                       const ssd1306_font_t *font) {
+    uint8_t bytes_per_col = (font->height + 7) / 8;
+    uint8_t stride = font->width * bytes_per_col;
     for (uint8_t i = 0; i < font->width; i++) {
-        uint8_t line = font->data[(*chr - font->first) * font->width + i];
-        for (uint8_t j = 0; j < font->height; j++) {
-            draw_pixel(dev, x + i, y + j, (line & 0x01u));
-            line >>= 1;
+        for (uint8_t b = 0; b < bytes_per_col; b++) {
+            uint8_t line = font->data[(*chr - font->first) * stride + i * bytes_per_col + b];
+            for (uint8_t j = 0; j < 8 && (b * 8 + j) < font->height; j++) {
+                draw_pixel(dev, x + i, y + b * 8 + j, (line & 0x01u));
+                line >>= 1;
+            }
         }
     }
 }
