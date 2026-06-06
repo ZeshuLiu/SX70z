@@ -51,10 +51,13 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base,
     } else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED) {
         // 断线自动重连，不阻塞主程序
         ESP_LOGI(TAG, "WiFi disconnected, reconnecting...");
+        camera_state.ip_str[0] = '\0';
         esp_wifi_connect();
     } else if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
         ip_event_got_ip_t *ev = (ip_event_got_ip_t *)event_data;
         ESP_LOGI(TAG, "WiFi connected, IP: " IPSTR, IP2STR(&ev->ip_info.ip));
+        snprintf(camera_state.ip_str, sizeof(camera_state.ip_str),
+                 IPSTR, IP2STR(&ev->ip_info.ip));
         static bool ota_started = false;
         if (!ota_started) {
             ota_started = true;

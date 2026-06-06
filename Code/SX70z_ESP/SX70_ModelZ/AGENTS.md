@@ -189,9 +189,11 @@ IP_EVENT_STA_GOT_IP → ota_web_start()
 - 基于 ESP-IDF 官方 `esp_lcd` 驱动（`esp_lcd_panel_ssd1306`），init/写屏/开关由官方库处理
 - 自维护本地帧缓冲 `dev->buff`（512 bytes），绘图 API 保留：`ssd1306_draw_str/line/rect/circle` 等
 - `ssd1306_show()` 通过 `esp_lcd_panel_draw_bitmap()` 全量刷新到屏幕
-- 字体使用 `font5x8_font`（5x8 像素，96 字符 ASCII）
-- **字体格式**：列式存储，每字符 `width` 字节（每字节 1 字列、8 像素高）。`ssd1306_draw_str` 目前只支持 8 像素高度字体（1 字节/列）
-- **TODO**：需要 12×16 或 16×16 大字体用于倒计时/正计时显示。需同时新增 `ssd1306_draw_str_large` 函数支持 2 字节/列（16 像素高）的渲染
+- 字体使用 `font5x8_font`（5×8 像素，96 字符 ASCII）
+- `ssd1306_draw_str_black()` — 白底上画黑字，用于状态栏黑字标记（自拍/多重曝光）
+- 8×16 字体（`font8x16_font`）从 Spleen BDF 转换，倒计时/大数字用
+- 6×12 字体（`font6x12_font`）从 Spleen BDF 转换，状态栏用
+- **绘图 API**（ssd1306 驱动层）：`ssd1306_draw_str`、`ssd1306_draw_str_black`、`ssd1306_draw_line/rect/circle/pixel`
 
 ### PCF8575 I2C GPIO 扩展
 
@@ -262,6 +264,7 @@ camera_state_t
 ├── has_flash                    闪光灯是否接入（gpio_inputs_read_s2 防抖检测）
 ├── self_timer_sec               自拍定时设置值（0/2/5/10s）
 ├── multi_exp_remain             额外多重曝光张数（0=正常，N=追加N张，-1=仅中止）
+├── ip_str[16]                   WiFi IP 地址（空字符串=未连接）
 └── test_led_level              调试 LED 电平（仅 OLED 不可用时闪烁）
 ```
 
@@ -277,7 +280,8 @@ camera_state_t
 - `down_button_call()` — M 档快门速度递减 / menu=10 定时值递减（0→10→5→2→0）
 - `up_button_call()` — M 档快门速度递增 / menu=10 定时值递增（0→2→5→10→0）
 - `push_button_short()` — 菜单循环：AUTO(0)→BULB(1)→TIME(2)→MANUAL(3)→AUTO(0)
-- `push_button_long()` — 进入/退出自拍定时（menu=10）。退出时 self_timer_sec 值保留
+- `push_button_long()` — 进入/退出设置菜单（menu=10）。退出回到 AUTO
+- `push_button_short()` — 菜单内切换调整模式；拍摄模式中循环 AUTO→B/T→MANUAL
 - `update_mode_display()` — 根据 `menu` 更新 `cam_mode` + `shut_mode` 字符串
 - `gpio_inputs_read_s2()` — S2 闪光灯检测（带防抖），返回 `bool`（接入=true）
 - `debounce_read_s1pin()` — S1T 全按去抖，返回 `bool`（按下=true）
@@ -286,10 +290,9 @@ camera_state_t
 | menu | 模式 | cam_mode | 快门来源 |
 |------|------|----------|---------|
 | 0 | AUTO | "AUTO" | auto_shutter_pos (测光自动) |
-| 1 | BULB | "B" | B 门（S1T 释放结束） |
-| 2 | TIME | "T" | T 门（S1T 按两次） |
-| 3 | MANUAL | 快门速度字符串 | 手动选择（上/下键） |
-| 10 | 自拍定时 | "Menu 0" | 定时值设置（上/下键循环 0→2→5→10s） |
+| 1 | BULB/TIME | time_mode 值 | B/T/秒值（上下键设置） |
+| 2 | MANUAL | 快门速度字符串 | 手动选择（上/下键） |
+| 10 | 设置菜单 | "Menu 0" | 参数列表（上下键切换，短按选中调值） |
 
 **主循环调用**：`control_task` 每 100ms 调 `button3d_handler()`，在闪光灯检测之前。
 
@@ -328,7 +331,27 @@ xTaskNotifyGive(shutter_task_handle);
 - `display_show_countdown(disp, seconds_remaining)` — 清屏后居中显示 `"5s"`，秒数为负数时直接返回
 - `self_timer_opts[] = {0, 2, 5, 10}` — 定时选项表
 
-**正常模式显示** — `self_timer_sec > 0` 时快门速度后追加定时值：`"1/125 5s"`、`"AUTO 2s"`
+**正常模式显示** — 状态栏右上角显示自拍定时 + 多重曝光数值（如 `"5 2"`），快门速度行不再附加定时标记。
+
+### 设置菜单（menu=10）
+
+参数驱动设计，通过 `menu_item_t` 表扩展：
+
+| 参数 | 选项 | 只读 |
+|------|------|------|
+| SelfTimer | 0/2/5/10s | — |
+| MultiExp | -1/0/1~10 次 | — |
+| IP Addr | 显示当前 IP 或 "not connected" | ✅ 只读 |
+
+**操作逻辑**：
+- 上/下键：未调整时切换参数，调整中时修改值
+- 短按：切换调整模式（只读项不可进入调整）
+- 长按：退出设置菜单回到 AUTO
+
+**OLED 布局**（y=18 一行）：
+```
+█ SelfTimer    5s         ← █ 调整标记，仅调整模式显示
+```
 
 ### 测光标定与曝光计算
 

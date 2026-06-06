@@ -37,6 +37,9 @@ void ssd1306_draw_circle(ssd1306_t *dev, int16_t x_center, int16_t y_center, uin
 void ssd1306_fill_rect(ssd1306_t *dev, int16_t x, int16_t y, uint16_t width, uint16_t height);
 void ssd1306_clear_rect(ssd1306_t *dev, int16_t x, int16_t y, uint16_t width, uint16_t height);
 void ssd1306_draw_str(ssd1306_t *dev, int x, int y, const char *str, const ssd1306_font_t *font);
+
+/** 黑字版 draw_str（白底上画黑点） */
+void ssd1306_draw_str_black(ssd1306_t *dev, int x, int y, const char *str, const ssd1306_font_t *font);
 void ssd1306_scroll_horiz(ssd1306_t *dev, bool right, uint8_t start_page, uint8_t end_page, uint8_t speed);
 void ssd1306_scroll_horiz_stop(ssd1306_t *dev);
 void ssd1306_scroll_row_vert(ssd1306_t *dev, bool down);

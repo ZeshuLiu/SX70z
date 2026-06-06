@@ -66,6 +66,7 @@ typedef struct {
     uint8_t shutter_speed;      // 当前快门速度索引
     uint8_t self_timer_sec;     // 自拍定时设置值：0/2/5/10
     int8_t multi_exp_remain;    // 额外多重曝光张数：0=正常拍一张 N=正常拍N张，-1=仅中止（首张防护，仍拍1张）
+    char ip_str[16];            // WiFi IP 地址（空字符串=未连接）
 
     bool test_led_level;        // LED 测试电平
 } camera_state_t;

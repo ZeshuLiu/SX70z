@@ -388,6 +388,8 @@ static void single_shut(char mode, bool use_flash, uint16_t shutter_delay_x10)
             sol2_disengage();
             ESP_LOGI(TAG, "Aperture disengaged");
         }
+
+        while (gpio_get_level(S1T_PIN) == 0) { delay_us(100); }
 }
 
 /* ---- 快门任务（移植 SX70Mk2 shutter_expose 完整时序） ---- */

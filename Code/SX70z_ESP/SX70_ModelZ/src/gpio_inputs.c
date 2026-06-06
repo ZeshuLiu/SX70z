@@ -61,6 +61,28 @@ bool gpio_inputs_read_s2(void)
 // 自拍定时选项：0/2/5/10s
 static const uint8_t self_timer_opts[] = {0, 2, 5, 10};
 
+// 多重曝光选项（-1=中止, 0=正常, 1~10=额外张数）
+static const int8_t multi_exp_opts[] = {-1, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10};
+#define MULTI_EXP_OPTS_COUNT 12
+
+// 菜单参数项
+typedef struct {
+    const char *name;         // 显示名称
+    uint8_t opts_count;       // 选项个数（0=只读，不响应调整）
+    const int8_t *opts;       // 可选值表（NULL=只读）
+    int8_t *value;            // 指向 camera_state 字段（只读项可为 NULL）
+} menu_item_t;
+
+static const menu_item_t menu_items[] = {
+    {"SelfTimer", SELF_TIMER_OPTS_COUNT, (const int8_t *)self_timer_opts, (int8_t *)&camera_state.self_timer_sec},
+    {"MultiExp",  MULTI_EXP_OPTS_COUNT,   multi_exp_opts,                &camera_state.multi_exp_remain},
+    {"IP Addr",   0,                       NULL,                          NULL},
+};
+#define MENU_ITEM_COUNT 3
+
+int8_t menu_item_idx = 0;   // 当前选中的参数索引
+bool menu_adjust = false;    // true=正在调值
+
 
 // 读取 PCF8575 按键状态 -> "101" 格式（1=未按下，0=按下）
 static void read_3d_button_pins(char *result)
@@ -150,11 +172,18 @@ static void down_button_call(void)
             camera_state.shutter_speed--;
         }
     } else if (camera_state.menu == MENU_SELF_TIMER) {
-        for (int i = 0; i < SELF_TIMER_OPTS_COUNT; i++) {
-            if (self_timer_opts[i] == camera_state.self_timer_sec) {
-                camera_state.self_timer_sec = self_timer_opts[(i - 1 + SELF_TIMER_OPTS_COUNT) % SELF_TIMER_OPTS_COUNT];
-                break;
+        if (menu_adjust) {
+            // 调整当前参数值
+            const menu_item_t *item = &menu_items[menu_item_idx];
+            for (int i = 0; i < item->opts_count; i++) {
+                if (item->opts[i] == *item->value) {
+                    *item->value = item->opts[(i - 1 + item->opts_count) % item->opts_count];
+                    break;
+                }
             }
+        } else {
+            // 切换参数
+            menu_item_idx = (menu_item_idx + 1) % MENU_ITEM_COUNT;
         }
     }
     update_mode_display();
@@ -168,30 +197,44 @@ static void up_button_call(void)
     } else if (camera_state.menu == MENU_MANUAL) {
         camera_state.shutter_speed = (camera_state.shutter_speed + 1) % SHUTTER_SPEED_COUNT;
     } else if (camera_state.menu == MENU_SELF_TIMER) {
-        for (int i = 0; i < SELF_TIMER_OPTS_COUNT; i++) {
-            if (self_timer_opts[i] == camera_state.self_timer_sec) {
-                camera_state.self_timer_sec = self_timer_opts[(i + 1) % SELF_TIMER_OPTS_COUNT];
-                break;
+        if (menu_adjust) {
+            const menu_item_t *item = &menu_items[menu_item_idx];
+            for (int i = 0; i < item->opts_count; i++) {
+                if (item->opts[i] == *item->value) {
+                    *item->value = item->opts[(i + 1) % item->opts_count];
+                    break;
+                }
             }
+        } else {
+            menu_item_idx = (menu_item_idx - 1 + MENU_ITEM_COUNT) % MENU_ITEM_COUNT;
         }
     }
     update_mode_display();
 }
 
-// 短按"按下"键：菜单循环 AUTO→BULB→TIME→MANUAL→AUTO
+// 短按"按下"键：菜单循环 / 菜单内切换调整模式
 static void push_button_short(void)
 {
-    if(camera_state.menu < 10) camera_state.menu = (camera_state.menu + 1) % MENU_COUNT;
+    if (camera_state.menu == MENU_SELF_TIMER) {
+        // 只读项不进入调整模式
+        if (menu_items[menu_item_idx].opts != NULL)
+            menu_adjust = !menu_adjust;
+    } else if (camera_state.menu < MENU_SETTINGS_START) {
+        camera_state.menu = (camera_state.menu + 1) % MENU_COUNT;
+    }
     update_mode_display();
 }
 
-// 长按"按下"键：进入/退出自拍定时
+// 长按"按下"键：进入/退出设置菜单
 static void push_button_long(void)
 {
     if (camera_state.menu < MENU_SETTINGS_START) {
         camera_state.menu = MENU_SELF_TIMER;
+        menu_item_idx = 0;
+        menu_adjust = false;
     } else {
         camera_state.menu = MENU_AUTO;
+        menu_adjust = false;
     }
     update_mode_display();
 }

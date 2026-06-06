@@ -1,6 +1,7 @@
 /* display_manager.c - OLED 显示帧绘制：模式/快门/测光信息布局 + 倒计时显示 */
 
 #include "display_manager.h"
+#include "gpio_inputs.h"
 #include "fonts/font5x8.h"
 #include "fonts/font6x12.h"
 #include "fonts/font8x16.h"
@@ -25,27 +26,6 @@ static const field_t fields[] = {
 static void draw_str_taking(ssd1306_t *disp, uint8_t index, const char *str)
 {
     ssd1306_draw_str(disp, fields[index].x, fields[index].y, str, fields[index].font);
-}
-
-// 黑字版 draw_str（白底上画黑字）
-static void draw_str_black(ssd1306_t *dev, int x, int y, const char *str, const ssd1306_font_t *font)
-{
-    while (*str) {
-        uint8_t bpc = (font->height + 7) / 8;
-        uint8_t stride = font->width * bpc;
-        for (uint8_t i = 0; i < font->width; i++) {
-            for (uint8_t b = 0; b < bpc; b++) {
-                uint8_t line = font->data[(*str - font->first) * stride + i * bpc + b];
-                for (uint8_t j = 0; j < 8 && (b * 8 + j) < font->height; j++) {
-                    if (line & 0x01u)
-                        ssd1306_clear_pixel(dev, x + i, y + b * 8 + j);
-                    line >>= 1;
-                }
-            }
-        }
-        x += font->width;
-        str++;
-    }
 }
 
 void display_show_frame(const camera_state_t *state, ssd1306_t *disp)
@@ -117,11 +97,16 @@ void display_show_taking(const camera_state_t *state, ssd1306_t *disp)
     }
     draw_str_taking(disp, 3, speed_str);
 
-    // 自拍定时（状态栏右上角）
+    // 状态栏右上角：自拍定时 + 多重曝光
     {
-        char buf[4];
+        char buf[4], me_buf[8];
         snprintf(buf, sizeof(buf), "%d", state->self_timer_sec);
-        draw_str_black(disp, 95, 1, state->self_timer_sec > 0 ? buf : "--", &font6x12_font);
+        snprintf(me_buf, sizeof(me_buf), "%d", state->multi_exp_remain);
+        char line[16];
+        snprintf(line, sizeof(line), "%s %s",
+            state->self_timer_sec > 0 ? buf : "--",
+            state->multi_exp_remain >= 0 ? me_buf : "-");
+        ssd1306_draw_str_black(disp, 95, 1, line, &font6x12_font);
     }
 
     // 测光值（右下角，LUX 自适应小数位: 总数 6 位）
@@ -146,11 +131,44 @@ void display_show_menu(const camera_state_t *state, ssd1306_t *disp)
     if (state->has_flash) {
         draw_bitmap(disp, 80, 1, 14, 14, flash_14_14);
     }
-    {
-        char buf[4];
-        snprintf(buf, sizeof(buf), "%d", state->self_timer_sec);
-        draw_str_black(disp, 95, 1, state->self_timer_sec > 0 ? buf : "--", &font6x12_font);
+    // 状态栏右上角：自拍定时 + 多重曝光
+    char buf[4], me_buf[8];
+    snprintf(buf, sizeof(buf), "%d", state->self_timer_sec);
+    snprintf(me_buf, sizeof(me_buf), "%d", state->multi_exp_remain);
+    char line[16];
+    snprintf(line, sizeof(line), "%s %s",
+        state->self_timer_sec > 0 ? buf : "--",
+        state->multi_exp_remain >= 0 ? me_buf : "-");
+    ssd1306_draw_str_black(disp, 95, 1, line, &font6x12_font);
+
+    // 参数名 + 值
+    const char *pname;
+    const char *pval_str;
+    char pval_buf[16];
+
+    if (menu_item_idx == 0) {
+        pname = "SelfTimer";
+        int v = state->self_timer_sec;
+        snprintf(pval_buf, sizeof(pval_buf), "%ds", v);
+        pval_str = pval_buf;
+    } else if (menu_item_idx == 1) {
+        pname = "MultiExp";
+        int v = state->multi_exp_remain;
+        snprintf(pval_buf, sizeof(pval_buf), "%d", v);
+        pval_str = pval_buf;
+    } else {
+        pname = "IP Addr";
+        pval_str = state->ip_str[0] ? state->ip_str : "not connected";
     }
+
+    // 左: 调整标记（5×8 字体参数可调时显示）
+	if (menu_adjust && menu_item_idx < 2) {
+        ssd1306_fill_rect(disp, 2, 19, 3, 7);
+    }
+    // 中: 参数名
+    ssd1306_draw_str(disp, 8, 18, pname, &font5x8_font);
+    // 右: 参数值
+    ssd1306_draw_str(disp, 57, 18, pval_str, &font5x8_font);
 }
 
 void display_show_countdown(ssd1306_t *disp, int8_t seconds_remaining)

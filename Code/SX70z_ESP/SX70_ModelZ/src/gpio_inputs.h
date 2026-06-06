@@ -29,3 +29,7 @@ void button3d_handler(void);
 
 /** 根据 menu 更新 cam_mode 和 shut_mode */
 void update_mode_display(void);
+
+/** 菜单参数选择与调整状态（供 display 模块读取） */
+extern int8_t menu_item_idx;
+extern bool menu_adjust;

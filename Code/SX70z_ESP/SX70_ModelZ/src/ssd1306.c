@@ -281,6 +281,25 @@ void ssd1306_draw_str(ssd1306_t *dev, int x, int y, const char *str, const ssd13
     } while (*(++str));
 }
 
+void ssd1306_draw_str_black(ssd1306_t *dev, int x, int y, const char *str, const ssd1306_font_t *font) {
+    while (*str) {
+        uint8_t bpc = (font->height + 7) / 8;
+        uint8_t stride = font->width * bpc;
+        for (uint8_t i = 0; i < font->width; i++) {
+            for (uint8_t b = 0; b < bpc; b++) {
+                uint8_t line = font->data[(*str - font->first) * stride + i * bpc + b];
+                for (uint8_t j = 0; j < 8 && (b * 8 + j) < font->height; j++) {
+                    if (line & 0x01u)
+                        ssd1306_clear_pixel(dev, x + i, y + b * 8 + j);
+                    line >>= 1;
+                }
+            }
+        }
+        x += font->width;
+        str++;
+    }
+}
+
 void ssd1306_scroll_horiz(ssd1306_t *dev, bool right, uint8_t start_page, uint8_t end_page, uint8_t speed) {
     // esp_lcd_ssd1306 doesn't expose scroll; commands would need raw I2C
 }
