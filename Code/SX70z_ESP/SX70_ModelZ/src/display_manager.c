@@ -16,7 +16,7 @@ typedef struct {
 } field_t;
 
 static const field_t fields[] = {
-    {10,  2, &font6x12_font},  // 0: cam_mode
+    {5,  2, &font6x12_font},  // 0: cam_mode
     {55,  2, &font6x12_font},  // 1: ISO
     {95,  1, &font6x12_font},  // 2: 自拍定时
     { 8, 22, &font5x8_font},  // 3: 快门速度
@@ -106,7 +106,7 @@ void display_show_taking(const camera_state_t *state, ssd1306_t *disp)
         snprintf(line, sizeof(line), "%s %s",
             state->self_timer_sec > 0 ? buf : "--",
             state->multi_exp_remain >= 0 ? me_buf : "-");
-        ssd1306_draw_str_black(disp, 95, 1, line, &font6x12_font);
+        ssd1306_draw_str_black(disp, 97, 1, line, &font6x12_font);
     }
 
     // 测光值（右下角，LUX 自适应小数位: 总数 6 位）
@@ -139,7 +139,7 @@ void display_show_menu(const camera_state_t *state, ssd1306_t *disp)
     snprintf(line, sizeof(line), "%s %s",
         state->self_timer_sec > 0 ? buf : "--",
         state->multi_exp_remain >= 0 ? me_buf : "-");
-    ssd1306_draw_str_black(disp, 95, 1, line, &font6x12_font);
+    ssd1306_draw_str_black(disp, 97, 1, line, &font6x12_font);
 
     // 参数名 + 值
     const char *pname;
@@ -171,11 +171,11 @@ void display_show_menu(const camera_state_t *state, ssd1306_t *disp)
     ssd1306_draw_str(disp, 57, 18, pval_str, &font5x8_font);
 }
 
-void display_show_countdown(ssd1306_t *disp, int8_t seconds_remaining)
+void display_show_countdown(ssd1306_t *disp, int16_t seconds_remaining)
 {
     if (seconds_remaining < 0) return;
     ssd1306_clear(disp);
-    char buf[8];
+    char buf[10];
     snprintf(buf, sizeof(buf), "%ds", seconds_remaining);
     // 居中显示（8×16 字体，"10s" = 3×8 = 24px 宽）
     ssd1306_draw_str(disp, 52, 8, buf, &font8x16_font);
