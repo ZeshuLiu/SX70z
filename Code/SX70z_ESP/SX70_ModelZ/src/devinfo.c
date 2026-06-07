@@ -1,3 +1,5 @@
+/* devinfo.c - 设备信息：序列号（MAC 地址）、固件版本、硬件版本 */
+
 #include <stdio.h>
 #include "devinfo.h"
 #include "esp_mac.h"
@@ -5,7 +7,7 @@
 devinfo_t device = {
     .serial     = "",
     .sw_major   = 1,
-    .sw_minor   = 1,
+    .sw_minor   = 4,
     .sw_patch   = 1,
     .hw_rev     = 1,
     .build_time = __DATE__ " " __TIME__,

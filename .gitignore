@@ -4,6 +4,7 @@ sdkconfig.old
 *.bin
 *.elf
 *.map
+!**/release/*.bin    # keep release firmware binaries
 
 # IDE
 .vscode/

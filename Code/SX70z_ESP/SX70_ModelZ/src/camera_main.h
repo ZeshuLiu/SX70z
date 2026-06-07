@@ -11,12 +11,28 @@
 #define DISPLAY_TASK_PRIO   5   // 显示任务：I2C 刷屏（与控制解耦，避免阻塞按键）
 #define METERING_TASK_PRIO  3   // 测光任务：低优先级（1s 周期）
 
-/** 系统窗口衰减系数 — 校准 OPT4001 读数以匹配真实场景照度
- *  raw_lux × METERING_ATTEN_K = 标定后 lux
- *  大于 1.0 = 补偿衰减，小于 1.0 = 抑制过曝
- *  调试方法：用独立测光表对比，调整此值直到 EV 读数一致
- */
+/** 电磁铁 PWM 占空比（LEDC 8-bit, 31.25kHz） */
+#define SOL1_DUTY_FULL  255   // SOL1 快门 100% 吸合
+#define SOL1_DUTY_HOLD  102   // SOL1 快门 40% 保持
+#define SOL2_DUTY_ON    255   // SOL2 光圈吸合
+#define SOL2_DUTY_OFF   0     // SOL2 光圈释放
+
+/** 系统窗口衰减系数 — 校准 OPT4001 读数以匹配真实场景照度 */
 #define METERING_ATTEN_K  256.0f
+
+/** 快门速度档位总数 */
+#define SHUTTER_SPEED_COUNT 27
+
+/** 菜单模式 */
+#define MENU_AUTO           0
+#define MENU_BULB           1    // BULB/TIME 合并
+#define MENU_MANUAL         2    // 原 menu 3 重编号
+#define MENU_COUNT          3    // 拍摄菜单项数量
+#define MENU_SETTINGS_START 10
+#define MENU_SELF_TIMER     MENU_SETTINGS_START
+
+/** 功能开关 */
+#define HAS_FOCUS 0  // 对焦功能待实现
 
 // 测光参数
 typedef struct {
@@ -43,11 +59,14 @@ typedef struct {
     metering_state_t metering;  // 测光
     button_state_t button;      // 按键
 
-    uint8_t menu;               // 菜单层级：0=AUTO, 1=BULB, 2=TIME, 3=MANUAL, 10=自拍
-    char cam_mode[8];           // 当前模式字符串
-    char shut_mode;             // 快门模式：'0'=闪光，'1'=正常，'B'=B 门，'T'=T 门
+    uint8_t menu;               // 菜单层级：0=AUTO, 1=BULB/TIME, 2=MANUAL, 10=自拍
+    uint16_t time_mode;         // menu 1 子模式：0=B, 1=T, 2+=秒值(2,4,8...翻倍)
+    char cam_mode[10];           // 当前模式字符串
+    char shut_mode;             // 快门模式: '1'=正常, 'B'=B 门, 'T'=T 门
     uint8_t shutter_speed;      // 当前快门速度索引
     uint8_t self_timer_sec;     // 自拍定时设置值：0/2/5/10
+    int8_t multi_exp_remain;    // 额外多重曝光张数：0=正常拍一张 N=正常拍N张，-1=仅中止（首张防护，仍拍1张）
+    char ip_str[16];            // WiFi IP 地址（空字符串=未连接）
 
     bool test_led_level;        // LED 测试电平
 } camera_state_t;
@@ -73,3 +92,6 @@ uint16_t get_shutter_time_x10(uint8_t index);
 
 /** 根据校准后 EV 计算快门速度索引 (F/8) */
 uint8_t calc_shutter_from_ev(float ev);
+
+/** GPTimer 微秒级延时（Core 1 忙等，不释放 CPU） */
+void delay_us(uint32_t us);

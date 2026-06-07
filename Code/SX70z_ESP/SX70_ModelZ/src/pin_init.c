@@ -1,3 +1,5 @@
+/* pin_init.c - GPIO 引脚初始化：输出/输入/I2C 引脚配置 */
+
 #include "pin_init.h"
 #include "PIN.h"
 #include "driver/gpio.h"
