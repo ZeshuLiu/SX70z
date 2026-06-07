@@ -274,7 +274,7 @@ static void single_shut(char mode, bool use_flash, uint16_t shutter_delay_x10)
         if (camera_state.self_timer_sec > 0) {
             suspend_noshut_task();
             for (int remain = camera_state.self_timer_sec; remain > 0; remain--) {
-                display_show_countdown(&display, remain);
+                display_show_countdown(&display, (int16_t)remain);
                 delay_us(1000000);
             }
             resums_noshut_task();
@@ -330,7 +330,7 @@ static void single_shut(char mode, bool use_flash, uint16_t shutter_delay_x10)
                 uint32_t cur_s = (esp_timer_get_time() - start) / 1000000;
                 if (cur_s != last_s) {
                     last_s = cur_s;
-                    display_show_countdown(&display, (int8_t)cur_s);
+                    display_show_countdown(&display, (int16_t)cur_s);
                 }
                 vTaskDelay(pdMS_TO_TICKS(1));
             }
@@ -367,7 +367,7 @@ static void single_shut(char mode, bool use_flash, uint16_t shutter_delay_x10)
 
                     if (cur_s != last_s) {
                         last_s = cur_s;
-                        display_show_countdown(&display, (int8_t)cur_s);
+                        display_show_countdown(&display, (int16_t)cur_s);
                     }
                     delay_us(1000);
                 }

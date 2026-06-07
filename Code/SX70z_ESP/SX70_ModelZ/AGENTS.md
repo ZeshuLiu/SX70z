@@ -328,7 +328,7 @@ xTaskNotifyGive(shutter_task_handle);
 4. 倒计时结束后 resume 三个任务，进入正常曝光流程
 
 **辅助函数**：
-- `display_show_countdown(disp, seconds_remaining)` — 清屏后居中显示 `"5s"`，秒数为负数时直接返回
+- `display_show_countdown(disp, int16_t seconds_remaining)` — 清屏后居中显示秒数（int16_t 覆盖 T门最大 18000s=5h），负数直接返回
 - `self_timer_opts[] = {0, 2, 5, 10}` — 定时选项表
 
 **正常模式显示** — 状态栏右上角显示自拍定时 + 多重曝光数值（如 `"5 2"`），快门速度行不再附加定时标记。
