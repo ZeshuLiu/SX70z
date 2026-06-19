@@ -7,7 +7,7 @@
 devinfo_t device = {
     .serial     = "",
     .sw_major   = 1,
-    .sw_minor   = 4,
+    .sw_minor   = 5,
     .sw_patch   = 1,
     .hw_rev     = 1,
     .build_time = __DATE__ " " __TIME__,

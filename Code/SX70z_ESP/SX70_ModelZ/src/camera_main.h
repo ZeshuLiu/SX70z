@@ -4,6 +4,7 @@
 #include <stdint.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "shutter_cal.h"
 
 /** 任务优先级 */
 #define SHUTTER_TASK_PRIO    10  // 强时序任务：最高优先级，阻塞所有 Core 1 任务
@@ -19,9 +20,6 @@
 
 /** 系统窗口衰减系数 — 校准 OPT4001 读数以匹配真实场景照度 */
 #define METERING_ATTEN_K  256.0f
-
-/** 快门速度档位总数 */
-#define SHUTTER_SPEED_COUNT 27
 
 /** 菜单模式 */
 #define MENU_AUTO           0
@@ -85,10 +83,6 @@ void camera_pause(void);
 
 /** OTA 完成后恢复控制任务 */
 void camera_resume(void);
-
-/** 快门速度表查询（供 display / shutter 模块使用） */
-const char *get_shutter_speed(uint8_t index);
-uint16_t get_shutter_time_x10(uint8_t index);
 
 /** 根据校准后 EV 计算快门速度索引 (F/8) */
 uint8_t calc_shutter_from_ev(float ev);

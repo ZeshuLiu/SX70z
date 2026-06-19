@@ -6,6 +6,7 @@
  */
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include "esp_log.h"
 #include "esp_http_server.h"
@@ -14,6 +15,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "camera_main.h"
+#include "shutter_cal.h"
 #include "devinfo.h"
 
 static const char *TAG = "ota_web";
@@ -42,7 +44,8 @@ static const char *TAG = "ota_web";
     "<tr><td>Firmware</td><td>v%u.%u.%u</td></tr>" \
     "<tr><td>Built</td><td>%s</td></tr>" \
     "<tr><td>Hardware</td><td>Rev %u</td></tr>" \
-    "</table>"
+    "</table>" \
+    "<p><a href='/calibration'>Shutter Calibration</a></p>"
 
 #define HTML_TAIL \
     "<p>Select firmware .bin file to upgrade.</p>" \
@@ -191,6 +194,149 @@ static esp_err_t post_update_handler(httpd_req_t *req)
     return ESP_OK;
 }
 
+/* ================================================================
+ *  GET /calibration → 快门校准值编辑页面
+ * ================================================================ */
+
+#define CAL_HTML_HEAD \
+    "<!DOCTYPE html><html><head><meta charset='utf-8'>" \
+    "<meta name='viewport' content='width=device-width,initial-scale=1'>" \
+    "<title>SX70z Calibration</title>" \
+    "<style>" \
+    "body{font-family:sans-serif;max-width:420px;margin:40px auto;padding:0 20px}" \
+    "table{width:100%%;border-collapse:collapse;margin:12px 0}" \
+    "td{padding:3px 6px;border:1px solid #ddd}" \
+    "td:first-child{background:#f5f5f5;font-weight:bold}" \
+    "input[type=number]{width:80px;font-size:14px;padding:2px 4px}" \
+    "h2{color:#333}.ok{color:green}.warn{color:#e65100}" \
+    "button{font-size:15px;padding:8px 16px;margin:8px 4px 8px 0}" \
+    "</style></head><body>" \
+    "<h2>Shutter Calibration</h2>" \
+    "<p><a href='/'>← Back to OTA</a></p>" \
+    "<p class='%s'>%s</p>" \
+    "<form method='POST' action='/calibration'>" \
+    "<table><tr><td>Speed</td><td>x10 (0.1ms)</td></tr>"
+
+#define CAL_HTML_TAIL \
+    "</table>" \
+    "<button type='submit'>Save</button>" \
+    "<button type='button' onclick=\"if(confirm('Reset to factory defaults?'))" \
+    "{location.href='/calibration?reset=1'}\">Reset to Defaults</button>" \
+    "</form></body></html>"
+
+static esp_err_t get_calibration_handler(httpd_req_t *req)
+{
+    /* 检查 ?reset=1 查询参数 */
+    char query[32] = {0};
+    httpd_req_get_url_query_str(req, query, sizeof(query));
+    if (strstr(query, "reset=1")) {
+        shutter_cal_reset_defaults();
+        /* 删除 NVS 中的校准数据（不写入默认值），使重启后仍识别为"未校准" */
+        shutter_cal_erase();
+        httpd_resp_set_status(req, "303 See Other");
+        httpd_resp_set_hdr(req, "Location", "/calibration");
+        httpd_resp_send(req, NULL, 0);
+        return ESP_OK;
+    }
+
+    static char page[6144];
+    const char *css_class = shutter_cal_is_valid() ? "ok" : "warn";
+    const char *status_text = shutter_cal_is_valid()
+        ? "&#10004; Calibrated (custom values from NVS)"
+        : "&#9888; Using factory defaults (not yet calibrated)";
+
+    int off = snprintf(page, sizeof(page), CAL_HTML_HEAD, css_class, status_text);
+    if (off < 0 || off >= sizeof(page)) goto toolong;
+
+    const uint16_t *vals = shutter_cal_get_array();   /* 加锁 */
+    for (int i = 0; i < SHUTTER_SPEED_COUNT; i++) {
+        int n = snprintf(page + off, sizeof(page) - off,
+                         "<tr><td>%s</td>"
+                         "<td><input type='number' name='s%d' value='%u' min='1' max='65535'></td></tr>",
+                         get_shutter_speed(i), i, vals[i]);
+        if (n < 0 || off + n >= sizeof(page)) {
+            shutter_cal_unlock();                      /* 解锁后跳出 */
+            goto toolong;
+        }
+        off += n;
+    }
+    shutter_cal_unlock();                              /* 正常解锁 */
+
+    {
+        int n = snprintf(page + off, sizeof(page) - off, "%s", CAL_HTML_TAIL);
+        if (n < 0 || off + n >= sizeof(page)) goto toolong;
+        off += n;
+    }
+
+    httpd_resp_set_type(req, "text/html; charset=utf-8");
+    httpd_resp_send(req, page, off);
+    return ESP_OK;
+
+toolong:
+    ESP_LOGW(TAG, "Calibration page truncated");
+    httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Page too large");
+    return ESP_FAIL;
+}
+
+/* ================================================================
+ *  POST /calibration → 解析表单并保存校准值到 NVS
+ * ================================================================ */
+
+static esp_err_t post_calibration_handler(httpd_req_t *req)
+{
+    /* 读取表单体 */
+    int total = req->content_len;
+    if (total <= 0 || total > 1024) {
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Invalid content length");
+        return ESP_FAIL;
+    }
+    char body[1024];
+    int received = 0;
+    while (received < total) {
+        int ret = httpd_req_recv(req, body + received, total - received);
+        if (ret <= 0) {
+            httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Read error");
+            return ESP_FAIL;
+        }
+        received += ret;
+    }
+    body[received] = '\0';
+
+    /* 解析 s0=xxx&s1=xxx&... */
+    uint16_t *cal = shutter_cal_get_array();
+    char *saveptr = NULL;
+    char *token = strtok_r(body, "&", &saveptr);
+    while (token) {
+        char *eq = strchr(token, '=');
+        if (eq) {
+            *eq = '\0';
+            const char *key = token;
+            const char *val = eq + 1;
+            if (key[0] == 's' && key[1] >= '0' && key[1] <= '9') {
+                int idx = atoi(key + 1);
+                if (idx >= 0 && idx < SHUTTER_SPEED_COUNT) {
+                    int v = atoi(val);
+                    if (v >= 1 && v <= 65535) {
+                        cal[idx] = (uint16_t)v;
+                    }
+                }
+            }
+        }
+        token = strtok_r(NULL, "&", &saveptr);
+    }
+    shutter_cal_unlock();
+
+    shutter_cal_save();
+    shutter_cal_set_valid(true);
+    ESP_LOGI(TAG, "Calibration updated via web");
+
+    /* 303 重定向回校准页面 */
+    httpd_resp_set_status(req, "303 See Other");
+    httpd_resp_set_hdr(req, "Location", "/calibration");
+    httpd_resp_send(req, NULL, 0);
+    return ESP_OK;
+}
+
 static httpd_handle_t g_server = NULL;
 
 /* ================================================================
@@ -215,6 +361,12 @@ esp_err_t ota_web_start(void)
     });
     httpd_register_uri_handler(g_server, &(httpd_uri_t){
         .uri = "/update", .method = HTTP_POST, .handler = post_update_handler
+    });
+    httpd_register_uri_handler(g_server, &(httpd_uri_t){
+        .uri = "/calibration", .method = HTTP_GET, .handler = get_calibration_handler
+    });
+    httpd_register_uri_handler(g_server, &(httpd_uri_t){
+        .uri = "/calibration", .method = HTTP_POST, .handler = post_calibration_handler
     });
 
     ESP_LOGI(TAG, "Ready — open http://<IP>/ in browser");

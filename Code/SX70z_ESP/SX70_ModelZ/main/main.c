@@ -30,6 +30,7 @@
 #include "wifi_provisioning/scheme_ble.h"
 #include "devinfo.h"
 #include "camera_main.h"
+#include "shutter_cal.h"
 #include "esp_ota_ops.h"
 #include "ota_web.h"
 #include "pin_init.h"
@@ -150,6 +151,9 @@ void app_main(void)
         ret = nvs_flash_init();
     }
     ESP_ERROR_CHECK(ret);
+
+    /* ---- 3.5 加载快门校准值 ---- */
+    ESP_ERROR_CHECK(shutter_cal_init());
 
     /* ---- 4. 网络栈初始化 ---- */
     ESP_ERROR_CHECK(esp_netif_init());

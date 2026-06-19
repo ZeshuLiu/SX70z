@@ -54,9 +54,10 @@ SX70_ModelZ/
 │   ├── main.c              # WiFi/BLE 初始化，启动控制任务，触发 OTA Web
 │   └── CMakeLists.txt      # REQUIRES: nvs_flash esp_wifi esp_event esp_netif wifi_provisioning src
 ├── src/
-│   ├── CMakeLists.txt      # REQUIRES: esp_http_server app_update driver esp_timer
+│   ├── CMakeLists.txt      # REQUIRES: esp_http_server app_update driver esp_timer nvs_flash
 │   ├── devinfo.h / .c      # 设备信息（序列号=芯片 MAC、软硬件版本）
 │   ├── camera_main.h / .c  # 相机控制任务 (Core 1)，camera_state_t 类型定义，camera_pause/resume
+│   ├── shutter_cal.h / .c  # 快门校准值 NVS 持久化 + 互斥锁保护，Web 端可编辑
 │   ├── display_manager.h / .c # SSD1306 显示帧绘制（show_frame / show_taking / countdown）
 │   ├── gpio_inputs.h / .c  # GPIO 输入处理：S1/S2 去抖、3D 按键、菜单/模式切换
 │   ├── opt4001.h / .c      # OPT4001 环境光传感器驱动（I2C0, 0x44）
@@ -82,7 +83,8 @@ app_main() [Core 0]
                                              esp_ota_mark_app_valid_cancel_rollback()
                                              确认固件有效（bootloader watchdog 要求）
   2. pin_init()                            — GPIO 初始化
-  3. NVS 初始化                             — 存储 WiFi 凭据、BLE 绑定
+  3. NVS 初始化                             — 存储 WiFi 凭据、BLE 绑定、快门校准值
+  3.5 shutter_cal_init()                   — 从 NVS 加载快门校准值（无数据则使用出厂默认值）
   4. esp_netif + event loop                — 网络栈基础
   5. 注册 WiFi / IP / Provisioning 事件回调
   6. WiFi STA 启动 + 设置主机名 "SX70z"
@@ -103,6 +105,10 @@ app_main() [Core 0]
 ```
 IP_EVENT_STA_GOT_IP → ota_web_start()
   → 浏览器打开 http://<ESP32_IP>
+  → 首页：设备信息 + OTA 固件上传 + "Shutter Calibration" 链接
+  → GET /calibration：27 档快门校准值编辑表格 + 校准状态指示
+  → POST /calibration：解析表单 → 更新内存数组 → 写入 NVS → 303 重定向
+  → GET /calibration?reset=1：恢复出厂默认值 + 删除 NVS key → 重启后仍为"未校准"
   → 选 .bin 文件上传
   → POST /update:
        camera_pause()              ← 挂起 Core 1 控制任务
@@ -117,6 +123,29 @@ IP_EVENT_STA_GOT_IP → ota_web_start()
   重启后 → app_main 步骤 1 检测到 PENDING_VERIFY → 调用
   esp_ota_mark_app_valid_cancel_rollback() 确认新固件有效，回滚取消
 ```
+
+### OTA Web 端点
+
+| 方法 | 路径 | 功能 |
+|------|------|------|
+| GET | `/` | 首页：设备信息 + OTA 上传 + 校准链接 |
+| POST | `/update` | 固件 OTA 升级（camera_pause → 流式写 Flash → 重启） |
+| GET | `/calibration` | 快门校准编辑页面（27 行可编辑表格 + 状态指示） |
+| POST | `/calibration` | 保存校准值到 NVS（application/x-www-form-urlencoded） |
+| GET | `/calibration?reset=1` | 恢复出厂默认值 + 删除 NVS key |
+
+### 快门校准模块（shutter_cal.h / .c）
+
+**NVS 结构**：namespace `"cal"`，key `"shutter"`，blob = `{ uint32_t magic; uint16_t values[27]; }`（58 字节）
+
+**magic 校验**：`0x53583000 | SHUTTER_SPEED_COUNT`，固件改变快门档位数则自动失效，回退到出厂默认值
+
+**`cal_is_valid` 标志**：
+- `false`：NVS 无数据 / magic 不匹配 / 用户点了 Reset → 页面显示 ⚠️ "Using factory defaults"
+- `true`：用户通过 Web 保存过 → 页面显示 ✅ "Calibrated"
+- Reset 操作删除 NVS key（不写入默认值），确保重启后仍为 `false`
+
+**互斥锁**：`shutter_cal_get_array()` 获取锁 → 修改数据 → `shutter_cal_unlock()` 释放。`get_shutter_time_x10()` 内部自动加解锁。`shutter_task` (Core 1) 读取与 Web handler (Core 0) 写入通过锁序列化。
 
 ### OTA 回滚机制
 
@@ -235,7 +264,8 @@ shutter_task 主循环：
 - `multi_exp_remain = -1` → 仅中止（首张防护，仍拍 1 张）
 - 每次额外曝光前重新加载 shutter_speed / mode / use_flash，允许张间修改
 
-- 快门速度表：27 档 (`"3s"` ~ `"1/8000"`)，`shutter_times_x10[]` 为校准后实际延时 (0.1ms 单位)
+- 快门速度表：27 档 (`"3s"` ~ `"1/8000"`)，校准值存储在 NVS（`shutter_cal.c`），Web 端可编辑无需重编译
+- 快门校准模块 `shutter_cal`：`shutter_cal_x10[]` 运行时可写，`shutter_cal_init()` 从 NVS 加载（magic=`0x53583000|27` 校验），失败则使用 `shutter_cal_default[]` 出厂值；`shutter_cal_get_array()` 获取锁后返回指针，用完需调 `shutter_cal_unlock()`
 - SOL1/SOL2 通过 LEDC PWM 控制（31.25kHz, 8-bit），100% 吸合 / 40% 保持
 - `#define HAS_FOCUS 0` 控制对焦功能编译开关，当前为 TODO 占位
 - S1T 去抖：`gpio_inputs.c` 中 `debounce_read_s1pin()` 计数器方式（`S1_DEBOUNCE_COUNT=5`），返回 `bool`
@@ -366,7 +396,7 @@ xTaskNotifyGive(shutter_task_handle);
 **`calc_shutter_from_ev(float ev)`** — 根据校准后 EV 查表返回快门速度索引 (0-26)。
 
 原理：F/8 镜头，`EV = log₂(64 / t_nominal)`，阈值取相邻两档 EV 中点。
-`shutter_times_x10[]` 为校准后实际延时，与此 EV 表无关。
+`shutter_cal_x10[]`（`shutter_cal.c`）为校准后实际延时，与此 EV 表无关。
 
 | 索引 | 快门 | 标称 t(s) | EV | 阈值 EV |
 |------|------|-----------|-----|------|
@@ -396,7 +426,7 @@ xTaskNotifyGive(shutter_task_handle);
 **AUTO 模式流程**：
 1. `metering_task` (1s 周期) → `auto_shutter_pos`
 2. `control_task` 检测 S1T + `menu==0` → `shutter_speed = auto_shutter_pos`
-3. `shutter_task` 用 `shutter_speed` 查 `shutter_times_x10` 表获得曝光时间
+3. `shutter_task` 用 `shutter_speed` 调 `get_shutter_time_x10()` 查 NVS 校准表获得曝光时间
 
 **全模式 EV/LUX 显示**（`display_manager.c`）：OLED 右下角显示 `EV13.6 L430.12`，LUX 小数位自适应（6 位总宽，整数位多则小数少）。快门速度大字在 AUTO 模式实时反映测光结果。`self_timer_sec > 0` 时快门速度后追加定时值（如 `"1/125 5s"`），menu=10 时显示定时值或 `"OFF"`。
 
