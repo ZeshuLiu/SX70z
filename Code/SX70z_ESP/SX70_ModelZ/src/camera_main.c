@@ -114,35 +114,6 @@ camera_state_t camera_state = {
     .multi_exp_remain = 0
 };
 
-/* ---- 快门速度表（移植自 SX70Mk2 metering.c） ---- */
-
-static const char *shutter_speeds[] = {
-    "3s", "2.5s", "2s", "1.5s", "1s",
-    "1/2", "1/3", "1/4", "1/6", "1/8", "1/10", "1/15", "1/20",
-    "1/30", "1/45", "1/60", "1/90", "1/125", "1/180", "1/250", "1/360",
-    "1/500", "1/1000", "1/2000", "1/4000A", "1/4000B", "1/8000"
-};
-
-// 快门时间 (0.1ms 单位)，对应上表
-static const uint16_t shutter_times_x10[] = {
-    30000, 25000, 20000, 15000, 10500,
-    5400, 4700, 3000, 2900, 1800, 1450, 1060, 880,
-    690, 610, 540, 500, 450, 430, 410, 370, 340, 320,
-    300, 280, 260, 240
-};
-
-const char *get_shutter_speed(uint8_t index)
-{
-    if (index >= SHUTTER_SPEED_COUNT) index = SHUTTER_SPEED_COUNT - 1;
-    return shutter_speeds[index];
-}
-
-uint16_t get_shutter_time_x10(uint8_t index)
-{
-    if (index >= SHUTTER_SPEED_COUNT) index = SHUTTER_SPEED_COUNT - 1;
-    return shutter_times_x10[index];
-}
-
 // 根据校准后 EV 计算快门速度 (F/8 镜头，标称快门)
 //
 // 原理: EV = log₂(F² / t) = log₂(64 / t_nominal)
