@@ -112,7 +112,7 @@ void display_show_taking(const camera_state_t *state, ssd1306_t *disp)
 
     // 飞行模式图标（状态栏最右侧）
     if (state->flight_mode) {
-        draw_bitmap(disp, 113, 1, 13, 13, flight_13_13);
+        draw_bitmap(disp, 112, 1, 14, 13, flight_13_13);
     }
 
     // 测光值（右下角，LUX 自适应小数位: 总数 6 位）
@@ -149,7 +149,7 @@ void display_show_menu(const camera_state_t *state, ssd1306_t *disp)
 
     // 飞行模式图标
     if (state->flight_mode) {
-        draw_bitmap(disp, 113, 1, 13, 13, flight_13_13);
+        draw_bitmap(disp, 112, 1, 14, 13, flight_13_13);
     }
 
     // 参数名 + 值
