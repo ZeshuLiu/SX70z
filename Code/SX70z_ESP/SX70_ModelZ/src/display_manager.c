@@ -64,7 +64,7 @@ static void draw_bitmap(ssd1306_t *disp, int16_t x, int16_t y, uint8_t w, uint8_
 
 // 图标数据
 extern const unsigned char flash_14_14[];
-extern const unsigned char flight_13_13[];
+extern const unsigned char plane2[];
 
 // 14×14 实心圆（无闪光灯）
 // static const uint8_t circle_14[] = {
@@ -112,7 +112,7 @@ void display_show_taking(const camera_state_t *state, ssd1306_t *disp)
 
     // 飞行模式图标（状态栏最右侧）
     if (state->flight_mode) {
-        draw_bitmap(disp, 112, 1, 14, 13, flight_13_13);
+        draw_bitmap(disp, 112, 1, 14, 13, plane2);
     }
 
     // 测光值（右下角，LUX 自适应小数位: 总数 6 位）
@@ -149,7 +149,7 @@ void display_show_menu(const camera_state_t *state, ssd1306_t *disp)
 
     // 飞行模式图标
     if (state->flight_mode) {
-        draw_bitmap(disp, 112, 1, 14, 13, flight_13_13);
+        draw_bitmap(disp, 112, 1, 14, 13, plane2);
     }
 
     // 参数名 + 值
