@@ -282,12 +282,21 @@ void ssd1306_draw_str(ssd1306_t *dev, int x, int y, const char *str, const ssd13
 }
 
 void ssd1306_draw_str_black(ssd1306_t *dev, int x, int y, const char *str, const ssd1306_font_t *font) {
+    const uint8_t last = font->first + font->count;
+
     while (*str) {
+        uint8_t ch = (uint8_t)*str;
+        if (ch < font->first || ch >= last) {
+            x += font->width;
+            str++;
+            continue;
+        }
+
         uint8_t bpc = (font->height + 7) / 8;
         uint8_t stride = font->width * bpc;
         for (uint8_t i = 0; i < font->width; i++) {
             for (uint8_t b = 0; b < bpc; b++) {
-                uint8_t line = font->data[(*str - font->first) * stride + i * bpc + b];
+                uint8_t line = font->data[(ch - font->first) * stride + i * bpc + b];
                 for (uint8_t j = 0; j < 8 && (b * 8 + j) < font->height; j++) {
                     if (line & 0x01u)
                         ssd1306_clear_pixel(dev, x + i, y + b * 8 + j);

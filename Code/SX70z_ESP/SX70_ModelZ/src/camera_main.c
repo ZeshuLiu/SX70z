@@ -75,7 +75,7 @@ static void sol1_hold(void)
 
 static void sol1_release(void)
 {
-    ledc_set_duty(LEDC_HIGH_SPEED_MODE, LEDC_CHANNEL_0, SOL2_DUTY_OFF);
+    ledc_set_duty(LEDC_HIGH_SPEED_MODE, LEDC_CHANNEL_0, SOL1_DUTY_OFF);  // SOL1 快门释放
     ledc_update_duty(LEDC_HIGH_SPEED_MODE, LEDC_CHANNEL_0);
 }
 
@@ -111,7 +111,8 @@ camera_state_t camera_state = {
     .test_led_level = false,
     .has_flash = false,
     .self_timer_sec = 0,
-    .multi_exp_remain = 0
+    .multi_exp_remain = 0,
+    .flight_mode = 0
 };
 
 // 根据校准后 EV 计算快门速度 (F/8 镜头，标称快门)

@@ -2,11 +2,16 @@
 
 #include "gpio_inputs.h"
 #include "camera_main.h"
+#include "flight_cfg.h"
 #include "pcf8575.h"
 #include "PIN.h"
 #include "driver/gpio.h"
+#include "esp_system.h"
+#include "esp_log.h"
 #include <stdio.h>
 #include <string.h>
+
+static const char *TAG = "gpio";
 
 extern pcf8575_t gpio_expander;
 
@@ -59,11 +64,15 @@ bool gpio_inputs_read_s2(void)
 /* ---- 3D 按键处理（移植自 SX70Mk2 主循环 button3d_handler） ---- */
 
 // 自拍定时选项：0/2/5/10s
-static const uint8_t self_timer_opts[] = {0, 2, 5, 10};
+static const int8_t self_timer_opts[] = {0, 2, 5, 10};
 
 // 多重曝光选项（-1=中止, 0=正常, 1~10=额外张数）
 static const int8_t multi_exp_opts[] = {-1, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10};
 #define MULTI_EXP_OPTS_COUNT 12
+
+// 飞行模式选项（0=关闭, 1=开启）
+static const int8_t flight_opts[] = {0, 1};
+#define FLIGHT_OPTS_COUNT 2
 
 // 菜单参数项
 typedef struct {
@@ -75,13 +84,15 @@ typedef struct {
 
 static const menu_item_t menu_items[] = {
     {"SelfTimer", SELF_TIMER_OPTS_COUNT, (const int8_t *)self_timer_opts, (int8_t *)&camera_state.self_timer_sec},
-    {"MultiExp",  MULTI_EXP_OPTS_COUNT,   multi_exp_opts,                &camera_state.multi_exp_remain},
+    {"MultiExp",  MULTI_EXP_OPTS_COUNT,   multi_exp_opts,                (int8_t *)&camera_state.multi_exp_remain},
+    {"Flight",    FLIGHT_OPTS_COUNT,      flight_opts,                   (int8_t *)&camera_state.flight_mode},
     {"IP Addr",   0,                       NULL,                          NULL},
 };
-#define MENU_ITEM_COUNT 3
+#define MENU_ITEM_COUNT 4
 
 int8_t menu_item_idx = 0;   // 当前选中的参数索引
 bool menu_adjust = false;    // true=正在调值
+static int8_t flight_mode_orig;  // 进入菜单时的飞行模式值，用于检测变更
 
 
 // 读取 PCF8575 按键状态 -> "101" 格式（1=未按下，0=按下）
@@ -103,28 +114,28 @@ static void read_3d_button_pins(char *result)
 void update_mode_display(void)
 {
     if (camera_state.menu == MENU_AUTO) {
-        snprintf(camera_state.cam_mode, sizeof(camera_state.cam_mode), "AUTO");
+        snprintf((char *)camera_state.cam_mode, sizeof(camera_state.cam_mode), "AUTO");
         camera_state.shut_mode = '1';
     } else if (camera_state.menu == MENU_BULB) {
         // menu 1: B/T 合并，通过 time_mode 区分
         if (camera_state.time_mode == 0) {
-            snprintf(camera_state.cam_mode, sizeof(camera_state.cam_mode), "B");
+            snprintf((char *)camera_state.cam_mode, sizeof(camera_state.cam_mode), "B");
             camera_state.shut_mode = 'B';
         } else if (camera_state.time_mode == 1) {
-            snprintf(camera_state.cam_mode, sizeof(camera_state.cam_mode), "T");
+            snprintf((char *)camera_state.cam_mode, sizeof(camera_state.cam_mode), "T");
             camera_state.shut_mode = 'T';
         } else {
             // time_mode >= 2: 秒值延时，暂用 T 标记
-            snprintf(camera_state.cam_mode, sizeof(camera_state.cam_mode),
+            snprintf((char *)camera_state.cam_mode, sizeof(camera_state.cam_mode),
                     "%us", camera_state.time_mode);
             camera_state.shut_mode = 'T';
         }
     } else if (camera_state.menu == MENU_MANUAL) {
-        snprintf(camera_state.cam_mode, sizeof(camera_state.cam_mode), "%s",
+        snprintf((char *)camera_state.cam_mode, sizeof(camera_state.cam_mode), "%s",
                 get_shutter_speed(camera_state.shutter_speed));
         camera_state.shut_mode = '1';
     } else if (camera_state.menu == MENU_SELF_TIMER) {
-        snprintf(camera_state.cam_mode, sizeof(camera_state.cam_mode), "Menu 0");
+        snprintf((char *)camera_state.cam_mode, sizeof(camera_state.cam_mode), "Menu 0");
     }
 }
 
@@ -175,6 +186,7 @@ static void down_button_call(void)
         if (menu_adjust) {
             // 调整当前参数值
             const menu_item_t *item = &menu_items[menu_item_idx];
+            if (item->opts == NULL) return;  // 只读项不可调整
             for (int i = 0; i < item->opts_count; i++) {
                 if (item->opts[i] == *item->value) {
                     *item->value = item->opts[(i - 1 + item->opts_count) % item->opts_count];
@@ -199,6 +211,7 @@ static void up_button_call(void)
     } else if (camera_state.menu == MENU_SELF_TIMER) {
         if (menu_adjust) {
             const menu_item_t *item = &menu_items[menu_item_idx];
+            if (item->opts == NULL) return;  // 只读项不可调整
             for (int i = 0; i < item->opts_count; i++) {
                 if (item->opts[i] == *item->value) {
                     *item->value = item->opts[(i + 1) % item->opts_count];
@@ -232,7 +245,19 @@ static void push_button_long(void)
         camera_state.menu = MENU_SELF_TIMER;
         menu_item_idx = 0;
         menu_adjust = false;
+        flight_mode_orig = camera_state.flight_mode;
     } else {
+        // 退出菜单前：飞行模式有变则保存到 NVS 并重启
+        if (camera_state.flight_mode != flight_mode_orig) {
+            esp_err_t err = flight_cfg_set(camera_state.flight_mode);
+            if (err == ESP_OK) {
+                ESP_LOGI(TAG, "Flight mode changed, restarting...");
+                vTaskDelay(pdMS_TO_TICKS(1000));  // 1s 等待 NVS 操作完成
+                esp_restart();
+            } else {
+                ESP_LOGE(TAG, "Failed to save flight mode: %d", err);
+            }
+        }
         camera_state.menu = MENU_AUTO;
         menu_adjust = false;
     }

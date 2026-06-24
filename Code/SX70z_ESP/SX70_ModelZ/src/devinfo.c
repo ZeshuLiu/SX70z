@@ -7,8 +7,8 @@
 devinfo_t device = {
     .serial     = "",
     .sw_major   = 1,
-    .sw_minor   = 5,
-    .sw_patch   = 1,
+    .sw_minor   = 6,
+    .sw_patch   = 0,
     .hw_rev     = 1,
     .build_time = __DATE__ " " __TIME__,
     .model      = "SX-70 Model Z",

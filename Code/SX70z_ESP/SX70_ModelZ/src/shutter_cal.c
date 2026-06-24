@@ -18,8 +18,8 @@ static const char *TAG = "shutter_cal";
 static SemaphoreHandle_t cal_mutex = NULL;
 
 /* ---- NVS 配置 ---- */
-#define NVS_NAMESPACE   "cal"
-#define NVS_KEY         "shutter"
+#define SHUTTER_CAL_NVS_NS   "cal"
+#define SHUTTER_CAL_NVS_KEY  "shutter"
 #define CAL_MAGIC       ((uint32_t)(0x53583000 | SHUTTER_SPEED_COUNT))
 
 /* ---- 出厂默认值 (0.1ms) ---- */
@@ -60,9 +60,9 @@ esp_err_t shutter_cal_init(void)
     }
 
     nvs_handle_t h;
-    esp_err_t err = nvs_open(NVS_NAMESPACE, NVS_READONLY, &h);
+    esp_err_t err = nvs_open(SHUTTER_CAL_NVS_NS, NVS_READONLY, &h);
     if (err != ESP_OK) {
-        ESP_LOGI(TAG, "NVS namespace '%s' not found, using defaults", NVS_NAMESPACE);
+        ESP_LOGI(TAG, "NVS namespace '%s' not found, using defaults", SHUTTER_CAL_NVS_NS);
         memcpy(shutter_cal_x10, shutter_cal_default, sizeof(shutter_cal_x10));
         cal_is_valid = false;
         return ESP_OK;
@@ -70,7 +70,7 @@ esp_err_t shutter_cal_init(void)
 
     shutter_cal_blob_t blob;
     size_t blob_size = sizeof(blob);
-    err = nvs_get_blob(h, NVS_KEY, &blob, &blob_size);
+    err = nvs_get_blob(h, SHUTTER_CAL_NVS_KEY, &blob, &blob_size);
     nvs_close(h);
 
     if (err != ESP_OK || blob_size != sizeof(blob) || blob.magic != CAL_MAGIC) {
@@ -102,13 +102,13 @@ esp_err_t shutter_cal_save(void)
     memcpy(blob.values, shutter_cal_x10, sizeof(blob.values));
 
     nvs_handle_t h;
-    esp_err_t err = nvs_open(NVS_NAMESPACE, NVS_READWRITE, &h);
+    esp_err_t err = nvs_open(SHUTTER_CAL_NVS_NS, NVS_READWRITE, &h);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "nvs_open failed: %d", err);
         return err;
     }
 
-    err = nvs_set_blob(h, NVS_KEY, &blob, sizeof(blob));
+    err = nvs_set_blob(h, SHUTTER_CAL_NVS_KEY, &blob, sizeof(blob));
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "nvs_set_blob failed: %d", err);
         nvs_close(h);
@@ -184,13 +184,13 @@ void shutter_cal_unlock(void)
 esp_err_t shutter_cal_erase(void)
 {
     nvs_handle_t h;
-    esp_err_t err = nvs_open(NVS_NAMESPACE, NVS_READWRITE, &h);
+    esp_err_t err = nvs_open(SHUTTER_CAL_NVS_NS, NVS_READWRITE, &h);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "nvs_open failed for erase: %d", err);
         return err;
     }
 
-    err = nvs_erase_key(h, NVS_KEY);
+    err = nvs_erase_key(h, SHUTTER_CAL_NVS_KEY);
     /* 如果键不存在，nvs_erase_key 返回 ESP_OK，忽略其他错误 */
     if (err != ESP_OK) {
         ESP_LOGW(TAG, "nvs_erase_key returned: %d (key may not exist)", err);

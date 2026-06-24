@@ -64,6 +64,7 @@ static void draw_bitmap(ssd1306_t *disp, int16_t x, int16_t y, uint8_t w, uint8_
 
 // 图标数据
 extern const unsigned char flash_14_14[];
+extern const unsigned char flight_13_13[];
 
 // 14×14 实心圆（无闪光灯）
 // static const uint8_t circle_14[] = {
@@ -106,7 +107,12 @@ void display_show_taking(const camera_state_t *state, ssd1306_t *disp)
         snprintf(line, sizeof(line), "%s %s",
             state->self_timer_sec > 0 ? buf : "--",
             state->multi_exp_remain >= 0 ? me_buf : "-");
-        ssd1306_draw_str_black(disp, 97, 1, line, &font6x12_font);
+        ssd1306_draw_str_black(disp, 82, 1, line, &font6x12_font);
+    }
+
+    // 飞行模式图标（状态栏最右侧）
+    if (state->flight_mode) {
+        draw_bitmap(disp, 113, 1, 13, 13, flight_13_13);
     }
 
     // 测光值（右下角，LUX 自适应小数位: 总数 6 位）
@@ -139,7 +145,12 @@ void display_show_menu(const camera_state_t *state, ssd1306_t *disp)
     snprintf(line, sizeof(line), "%s %s",
         state->self_timer_sec > 0 ? buf : "--",
         state->multi_exp_remain >= 0 ? me_buf : "-");
-    ssd1306_draw_str_black(disp, 97, 1, line, &font6x12_font);
+    ssd1306_draw_str_black(disp, 82, 1, line, &font6x12_font);
+
+    // 飞行模式图标
+    if (state->flight_mode) {
+        draw_bitmap(disp, 113, 1, 13, 13, flight_13_13);
+    }
 
     // 参数名 + 值
     const char *pname;
@@ -156,13 +167,16 @@ void display_show_menu(const camera_state_t *state, ssd1306_t *disp)
         int v = state->multi_exp_remain;
         snprintf(pval_buf, sizeof(pval_buf), "%d", v);
         pval_str = pval_buf;
+    } else if (menu_item_idx == 2) {
+        pname = "Flight";
+        pval_str = state->flight_mode ? "ON" : "OFF";
     } else {
         pname = "IP Addr";
         pval_str = state->ip_str[0] ? state->ip_str : "not connected";
     }
 
     // 左: 调整标记（5×8 字体参数可调时显示）
-	if (menu_adjust && menu_item_idx < 2) {
+	if (menu_adjust && menu_item_idx < 3) {
         ssd1306_fill_rect(disp, 2, 19, 3, 7);
     }
     // 中: 参数名
