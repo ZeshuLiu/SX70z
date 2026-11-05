@@ -4,9 +4,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Polaroid SX-70 相机控制器，基于 ESP32-PICO-V3 (4MB Flash, 无 PSRAM)，运行 ESP-IDF v5.5.2。
+Polaroid SX-70 相机控制器，基于 ESP32-PICO-D4 (4MB Flash, 无 PSRAM)，运行 ESP-IDF v5.5.2。
 
-- **硬件**: 自绘 PCB，ESP32-PICO-V3、闪光灯、快门/光圈控制、PCF8575 I2C GPIO 扩展、SSD1306 OLED、OPT4001 环境光传感器
+- **硬件**: 自绘 PCB，ESP32-PICO-D4、闪光灯、快门/光圈控制、机身板贴装 PCF8574TS/3 I2C GPIO 扩展、SSD1306 OLED、OPT4001 环境光传感器
+- **机身板地址**: 原始原理图和 BOM 标注 PCF8574ATS，实际贴装 PCF8574TS/3，投产目录 BOM 已更正。网表中 A0/A1/A2 接地，实际 PCF8574 地址为 0x20，与源码一致。源码用 PCF8575 驱动连续读两字节，按键位 8/9/10 对应第二次读取的 P0/P1/P2；作者确认现有固件适配实际芯片。下文 PCF8575 的描述为代码行为。
 - **功能**: 自动测光曝光、B/T/手动模式、3D 按键菜单、BLE + WiFi 配网、HTTP OTA 升级
 - **仓库**: `SX70z` — 独立固件仓库，硬件设计在 `../Hardware/` 下
 - **ESP-IDF**: `D:\ESPIDF\v5.5.2\esp-idf` / **工具链**: `D:\ESPIDF_TOOL`
@@ -171,7 +172,7 @@ IP_EVENT_STA_GOT_IP → ota_web_start()
 
 ### sdkconfig 关键配置
 
-- `CONFIG_IDF_TARGET="esp32"` — PICO-V3 在 IDF 中归类为 ESP32
+- `CONFIG_IDF_TARGET="esp32"` — PICO-D4 在 IDF 中归类为 ESP32
 - `CONFIG_BT_NIMBLE_ENABLED=y` — NimBLE 协议栈
 - `CONFIG_PARTITION_TABLE_TWO_OTA_LARGE=y` — 双 OTA (各 1700KB)
 - `CONFIG_WIFI_PROV_BLE_SEC_CONN=y` — BLE 安全配网

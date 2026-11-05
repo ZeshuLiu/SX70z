@@ -31,6 +31,7 @@
 #include "devinfo.h"
 #include "camera_main.h"
 #include "shutter_cal.h"
+#include "flight_cfg.h"
 #include "esp_ota_ops.h"
 #include "ota_web.h"
 #include "pin_init.h"
@@ -155,6 +156,23 @@ void app_main(void)
     /* ---- 3.5 加载快门校准值 ---- */
     ESP_ERROR_CHECK(shutter_cal_init());
 
+    /* ---- 3.6 加载飞行模式 ---- */
+    ESP_ERROR_CHECK(flight_cfg_init());
+    camera_state.flight_mode = flight_cfg_get();
+
+    /* ---- 8. 启动控制任务到 Core 1 ---- */
+    xTaskCreatePinnedToCore(control_task, "control", 8192, NULL, CONTROL_TASK_PRIO,
+                            &control_task_handle, 1);
+    ESP_LOGI(TAG, "Init done, control task running on Core 1");
+
+    /* 飞行模式：跳过所有网络栈初始化 */
+    if (camera_state.flight_mode) {
+        ESP_LOGI(TAG, "Flight mode ON — WiFi/BLE disabled");
+        while (1) {
+            vTaskDelay(pdMS_TO_TICKS(10000));
+        }
+    }
+
     /* ---- 4. 网络栈初始化 ---- */
     ESP_ERROR_CHECK(esp_netif_init());
     ESP_ERROR_CHECK(esp_event_loop_create_default());
@@ -196,11 +214,6 @@ void app_main(void)
         wifi_prov_mgr_deinit();
         esp_wifi_connect();
     }
-
-    /* ---- 8. 启动控制任务到 Core 1 ---- */
-    xTaskCreatePinnedToCore(control_task, "control", 8192, NULL, CONTROL_TASK_PRIO,
-                            &control_task_handle, 1);
-    ESP_LOGI(TAG, "Init done, control task running on Core 1");
 
     /* Core 0 辅助任务：打印 WiFi 信号强度等非控制相关工作 */
     while (1) {

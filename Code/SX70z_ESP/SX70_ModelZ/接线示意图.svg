@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="950" viewBox="0 0 1400 950">
+<rect width="1400" height="950" fill="#f6f8fa"/><g font-family="Microsoft YaHei, Noto Sans CJK SC, sans-serif" fill="#172334">
+<text x="55" y="65" font-size="34" font-weight="bold">SX70z 串口烧录及机身控制器接线</text>
+<text x="55" y="102" font-size="19">按现有 PCB 网表整理；为信号示意图，非实物方向图。断电后接线，按引脚编号辨认。</text>
+<rect x="55" y="145" width="470" height="330" rx="15" fill="#fff" stroke="#9aa9b8" stroke-width="2"/>
+<text x="80" y="184" font-size="25" font-weight="bold">机身控制器 J1：12 pin FPC</text>
+<text x="80" y="222" font-size="19">引脚编号　信号　　串口工具 / 用途</text>
+<g font-size="20"><text x="92" y="258">1–4　　　3.3V　　 不接串口供电</text><text x="92" y="294">5　　　　TX　　　 接 USB 串口 RX</text><text x="92" y="330">6　　　　RX　　　 接 USB 串口 TX</text><text x="92" y="366">7　　　　BOOT　　下载启动控制</text><text x="92" y="402">8 / 9　　 SDA / SCL　机身控制器 I²C</text><text x="92" y="438">10–12　　GND　　 接 USB 串口 GND</text></g>
+<rect x="615" y="145" width="720" height="330" rx="15" fill="#fff" stroke="#9aa9b8" stroke-width="2"/>
+<text x="640" y="184" font-size="25" font-weight="bold">主控相机 FPC 焊盘：网络标记</text>
+<text x="640" y="224" font-size="20">ESP_TX0 → sx1:FF　　　ESP_RX0 → sx1:FT</text>
+<text x="640" y="262" font-size="20">BOOT → sx1:S1T_　　　 SDA1 → sx1:S1F_</text>
+<text x="640" y="300" font-size="20">SCL1 → sx1:S2　　　　　GND → sx1:GND</text>
+<text x="640" y="350" font-size="18">以上为网表中的焊盘名称，不是机身接口的物理编号；</text>
+<text x="640" y="380" font-size="18">必须根据板上标识、PCB 与万用表通断确认。</text>
+<text x="640" y="422" font-size="18">两端对应关系还须对照实际 FPC 走线验证。</text>
+<rect x="55" y="515" width="1280" height="340" rx="15" fill="#fff" stroke="#9aa9b8" stroke-width="2"/>
+<text x="80" y="555" font-size="25" font-weight="bold">供电与下载</text>
+<g font-size="21"><text x="80" y="598">相机独立供电；USB 串口转换器只接 GND、TX、RX，使用 3.3 V 逻辑。</text><text x="80" y="640">USB 串口 RX ← 相机 TX　　 USB 串口 TX → 相机 RX　　 GND ↔ GND</text><text x="80" y="682">手动下载：上电或复位时将 BOOT 拉低，进入下载后释放；具体操作依板上电路确认。</text><text x="80" y="724">烧录完成后使 BOOT 恢复高电平，重新上电或复位，再启动固件。</text><text x="80" y="779" fill="#a94322">不要把 USB 串口的 3.3 V 或 5 V 供电脚接到相机；不要用 5 V 逻辑串口。</text></g>
+<text x="55" y="905" font-size="17" fill="#526374">来源：机身控制器和主控 production/netlist.ipc；主控网表与 3.5 Gerber 的对应须对照实物。</text>
+</g></svg>

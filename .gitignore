@@ -20,3 +20,6 @@ Thumbs.db
 Desktop.ini
 Code/SX70z_ESP/SX70_ModelZ/.codex/
 Code/SX70z_ESP/SX70_ModelZ/.claude/
+
+# 代码审查文档（内部使用）
+CODE_ISSUES.md

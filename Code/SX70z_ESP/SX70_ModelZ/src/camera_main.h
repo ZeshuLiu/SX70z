@@ -15,6 +15,7 @@
 /** 电磁铁 PWM 占空比（LEDC 8-bit, 31.25kHz） */
 #define SOL1_DUTY_FULL  255   // SOL1 快门 100% 吸合
 #define SOL1_DUTY_HOLD  102   // SOL1 快门 40% 保持
+#define SOL1_DUTY_OFF   0     // SOL1 快门释放
 #define SOL2_DUTY_ON    255   // SOL2 光圈吸合
 #define SOL2_DUTY_OFF   0     // SOL2 光圈释放
 
@@ -49,8 +50,8 @@ typedef struct {
     uint32_t push_down_start;   // 按下键开始时间 (ms)
 } button_state_t;
 
-// 相机参数
-typedef struct {
+// 相机参数（volatile: 控制/快门/测光任务跨任务读写）
+typedef volatile struct {
     bool if_display;            // OLED 是否可用
     bool has_flash;             // 闪光灯是否接入（control_task 统一检测）
 
@@ -66,6 +67,7 @@ typedef struct {
     int8_t multi_exp_remain;    // 额外多重曝光张数：0=正常拍一张 N=正常拍N张，-1=仅中止（首张防护，仍拍1张）
     char ip_str[16];            // WiFi IP 地址（空字符串=未连接）
 
+    int8_t flight_mode;         // 飞行模式：0=关闭, 1=开启（NVS 持久化，重启生效）
     bool test_led_level;        // LED 测试电平
 } camera_state_t;
 
