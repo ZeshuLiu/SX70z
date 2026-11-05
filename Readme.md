@@ -81,7 +81,7 @@ Core 1:   相机控制（与射频中断隔离）
 <img src="pics/Sample4.jpg" alt="样片4" style="zoom:50%;" />
 
 ## 硬件制造
-光绘（Gerber）文件可以在 [Hardware](Hardware/) 目录下各子目录中找到，必须使用 0.8mm 以下的 PCB 制造。需要使用 fpc 软排线连接主板和机身控制器。
+投产文件集中在 [投产文件](投产文件/)：主控使用 3.5 版 Gerber，机身控制器、机身 FPC 和外壳文件也在其中。BOM、坐标和硬件版本的对应关系仍须按目录说明核对后再下单。PCB 厚度应小于 0.8 mm，主板与机身控制器通过 FPC 连接。完整操作草稿见[复刻与调试指南](Code/SX70z_ESP/SX70_ModelZ/复刻指南.md)。
 
 ## 软件
 
@@ -97,7 +97,7 @@ Core 1:   相机控制（与射频中断隔离）
 3. 选择编译好的 `.bin` 固件文件上传
 4. 上传完成自动重启，新固件生效（Bootloader 会校验固件有效性，异常自动回滚）
 
-建议针对自己的快门适当调整代码中 `shutter_times_x10[]` 的值，可以使用这个[快门速度测试器](https://github.com/ZeshuLiu/ShutterSpeedCalibrator)来测试机器的快门速度，便于调整。
+快门可通过 `http://<相机IP>/calibration` 页面校准并保存，无需修改源码。先将 1/8000 调到快门形成一个小缝，其余档位可参考该档的偏移量在默认值基础上调整，再逐档测量确认；具体操作可搜索“陆工主板 快门校准”教程，也可使用[快门速度测试器](https://github.com/ZeshuLiu/ShutterSpeedCalibrator)。详细说明见[复刻与调试指南](Code/SX70z_ESP/SX70_ModelZ/复刻指南.md)。
 
 ## 组装
 > 提示：组装需要一些基本的工具：电烙铁、撬棒和镊子。 \
