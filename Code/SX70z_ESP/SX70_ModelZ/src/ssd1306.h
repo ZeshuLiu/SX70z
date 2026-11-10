@@ -9,9 +9,19 @@
 #include "esp_lcd_types.h"
 #include "font.h"
 
+typedef enum {
+    SSD1306_ROTATION_0 = 0,
+    /* Native panel is viewed after physically turning it clockwise by 90 degrees. */
+    SSD1306_ROTATION_90_CW,
+} ssd1306_rotation_t;
+
 typedef struct {
+    /* Logical drawing dimensions; panel dimensions and buffer format stay native. */
     uint16_t width;
     uint16_t height;
+    uint16_t panel_width;
+    uint16_t panel_height;
+    ssd1306_rotation_t rotation;
     uint16_t pages;
     uint8_t *buff;
     size_t buff_size;
@@ -25,6 +35,8 @@ void ssd1306_deinit(ssd1306_t *dev);
 void ssd1306_power_off(ssd1306_t *dev);
 void ssd1306_power_on(ssd1306_t *dev);
 void ssd1306_clear(ssd1306_t *dev);
+/** Set logical drawing orientation and clear the buffer. Does not change panel mirroring. */
+void ssd1306_set_rotation(ssd1306_t *dev, ssd1306_rotation_t rotation);
 void ssd1306_invert(ssd1306_t *dev, uint8_t inv);
 void ssd1306_show(ssd1306_t *dev);
 void ssd1306_contrast(ssd1306_t *dev, uint8_t val);

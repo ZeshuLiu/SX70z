@@ -13,25 +13,30 @@ static const char *TAG = "SSD1306";
 
 static void draw_pixel(ssd1306_t *dev, uint16_t x, uint16_t y, bool color) {
     if (x < dev->width && y < dev->height) {
+        if (dev->rotation == SSD1306_ROTATION_90_CW) {
+            uint16_t native_x = y;
+            y = dev->panel_height - 1 - x;
+            x = native_x;
+        }
         if (color) {
-            dev->buff[x + dev->width * (y >> 3)] |= 0x01u << (y & 7);
+            dev->buff[x + dev->panel_width * (y >> 3)] |= 0x01u << (y & 7);
         } else {
-            dev->buff[x + dev->width * (y >> 3)] &= ~(0x01u << (y & 7));
+            dev->buff[x + dev->panel_width * (y >> 3)] &= ~(0x01u << (y & 7));
         }
     }
 }
 
 static void fill_rect(ssd1306_t *dev, int16_t x_in, int16_t y_in,
                     uint16_t width, uint16_t height, bool color) {
-    uint16_t x = x_in < 0 ? 0 : x_in;
-    uint16_t y = y_in < 0 ? 0 : y_in;
-    uint16_t x_end = x + width;
-    uint16_t y_end = y + height;
-    x_end = x_end > dev->width ? dev->width : x_end;
-    y_end = y_end > dev->height ? dev->height : y_end;
+    int32_t x = x_in < 0 ? 0 : x_in;
+    int32_t y = y_in < 0 ? 0 : y_in;
+    int32_t x_end = (int32_t)x_in + width;
+    int32_t y_end = (int32_t)y_in + height;
+    if (x_end > dev->width) x_end = dev->width;
+    if (y_end > dev->height) y_end = dev->height;
 
-    for (uint16_t i = x; i < x_end; ++i) {
-        for (uint16_t j = y; j < y_end; ++j) {
+    for (int32_t i = x; i < x_end; ++i) {
+        for (int32_t j = y; j < y_end; ++j) {
             draw_pixel(dev, i, j, color);
         }
     }
@@ -56,6 +61,9 @@ bool ssd1306_init(ssd1306_t *dev, uint16_t width, uint16_t height,
                   uint8_t i2c_addr, i2c_port_t i2c_port, bool external_vcc) {
     dev->width = width;
     dev->height = height;
+    dev->panel_width = width;
+    dev->panel_height = height;
+    dev->rotation = SSD1306_ROTATION_0;
     dev->pages = height / 8;
     dev->buff_size = width * dev->pages;
 
@@ -161,12 +169,20 @@ void ssd1306_clear(ssd1306_t *dev) {
     memset(dev->buff, 0, dev->buff_size);
 }
 
+void ssd1306_set_rotation(ssd1306_t *dev, ssd1306_rotation_t rotation) {
+    if (rotation != SSD1306_ROTATION_0 && rotation != SSD1306_ROTATION_90_CW) return;
+    dev->rotation = rotation;
+    dev->width = rotation == SSD1306_ROTATION_90_CW ? dev->panel_height : dev->panel_width;
+    dev->height = rotation == SSD1306_ROTATION_90_CW ? dev->panel_width : dev->panel_height;
+    ssd1306_clear(dev);
+}
+
 void ssd1306_invert(ssd1306_t *dev, uint8_t inv) {
     esp_lcd_panel_invert_color(dev->panel, inv);
 }
 
 void ssd1306_show(ssd1306_t *dev) {
-    esp_lcd_panel_draw_bitmap(dev->panel, 0, 0, dev->width, dev->height, dev->buff);
+    esp_lcd_panel_draw_bitmap(dev->panel, 0, 0, dev->panel_width, dev->panel_height, dev->buff);
 }
 
 void ssd1306_contrast(ssd1306_t *dev, uint8_t val) {
@@ -270,15 +286,17 @@ void ssd1306_clear_rect(ssd1306_t *dev, int16_t x, int16_t y, uint16_t width, ui
 void ssd1306_draw_str(ssd1306_t *dev, int x, int y, const char *str, const ssd1306_font_t *font) {
     const uint8_t last = font->first + font->count;
 
-    do {
+    while (*str) {
         uint8_t ch = (uint8_t)*str;
         if (ch < font->first || ch >= last) {
             x += font->width;
+            str++;
             continue;
         }
         draw_char(dev, x, y, str, font);
         x += font->width;
-    } while (*(++str));
+        str++;
+    }
 }
 
 void ssd1306_draw_str_black(ssd1306_t *dev, int x, int y, const char *str, const ssd1306_font_t *font) {
@@ -317,6 +335,26 @@ void ssd1306_scroll_horiz_stop(ssd1306_t *dev) {
 }
 
 void ssd1306_scroll_row_vert(ssd1306_t *dev, bool down) {
+    if (dev->rotation == SSD1306_ROTATION_90_CW) {
+        /* Logical y is the native column; preserve wraparound without a second buffer. */
+        for (uint16_t x = 0; x < dev->width; ++x) {
+            uint16_t native_y = dev->panel_height - 1 - x;
+            uint16_t base = dev->panel_width * (native_y >> 3);
+            uint8_t bit = 1u << (native_y & 7);
+            if (down) {
+                bool carry = (dev->buff[base + dev->height - 1] & bit) != 0;
+                for (int y = dev->height - 1; y > 0; --y)
+                    draw_pixel(dev, x, y, (dev->buff[base + y - 1] & bit) != 0);
+                draw_pixel(dev, x, 0, carry);
+            } else {
+                bool carry = (dev->buff[base] & bit) != 0;
+                for (uint16_t y = 0; y + 1 < dev->height; ++y)
+                    draw_pixel(dev, x, y, (dev->buff[base + y + 1] & bit) != 0);
+                draw_pixel(dev, x, dev->height - 1, carry);
+            }
+        }
+        return;
+    }
     uint16_t width = dev->width;
     uint16_t pages = dev->height / 8;
 

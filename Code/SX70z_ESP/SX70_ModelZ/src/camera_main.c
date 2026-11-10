@@ -246,7 +246,7 @@ static void single_shut(char mode, bool use_flash, uint16_t shutter_delay_x10)
         if (camera_state.self_timer_sec > 0) {
             suspend_noshut_task();
             for (int remain = camera_state.self_timer_sec; remain > 0; remain--) {
-                display_show_countdown(&display, (int16_t)remain);
+                display_show_countdown(&display, (int32_t)remain);
                 delay_us(1000000);
             }
             resums_noshut_task();
@@ -302,7 +302,7 @@ static void single_shut(char mode, bool use_flash, uint16_t shutter_delay_x10)
                 uint32_t cur_s = (esp_timer_get_time() - start) / 1000000;
                 if (cur_s != last_s) {
                     last_s = cur_s;
-                    display_show_countdown(&display, (int16_t)cur_s);
+                    display_show_countdown(&display, (int32_t)cur_s);
                 }
                 vTaskDelay(pdMS_TO_TICKS(1));
             }
@@ -339,7 +339,7 @@ static void single_shut(char mode, bool use_flash, uint16_t shutter_delay_x10)
 
                     if (cur_s != last_s) {
                         last_s = cur_s;
-                        display_show_countdown(&display, (int16_t)cur_s);
+                        display_show_countdown(&display, (int32_t)cur_s);
                     }
                     delay_us(1000);
                 }
@@ -449,10 +449,11 @@ static void shutter_task(void *pvParameters)
 
 void control_task(void *pvParameters)
 {
-    /* ---- SSD1306 OLED（I2C1, 0x3C, 128x64） ---- */
+    /* ---- SSD1306 OLED（原生 128x32，顺时针转屏观看时逻辑 32x128） ---- */
     if (ssd1306_init(&display, 128, 32, 0x3C, I2C_NUM_1, false)) {
-        ssd1306_clear(&display);
-        ssd1306_draw_str(&display, 0, 0, "SX70z Ready", &font5x8_font);
+        ssd1306_set_rotation(&display, SSD1306_ROTATION_90_CW);
+        ssd1306_draw_str(&display, 3, 44, "SX70z", &font5x8_font);
+        ssd1306_draw_str(&display, 3, 60, "READY", &font5x8_font);
         ssd1306_show(&display);
         camera_state.if_display = true;
         ESP_LOGI(TAG, "SSD1306 initialized");

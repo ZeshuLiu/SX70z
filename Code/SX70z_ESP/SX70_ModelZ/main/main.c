@@ -49,7 +49,11 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base,
                                int32_t event_id, void *event_data)
 {
     if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_START) {
+        camera_state.wifi_enabled = true;
         ESP_LOGD(TAG, "WiFi STA started");
+    } else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_STOP) {
+        camera_state.wifi_enabled = false;
+        camera_state.ip_str[0] = '\0';
     } else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED) {
         // 断线自动重连，不阻塞主程序
         ESP_LOGI(TAG, "WiFi disconnected, reconnecting...");
@@ -82,6 +86,7 @@ static void prov_event_handler(void *arg, esp_event_base_t event_base,
 
     switch (event_id) {
     case WIFI_PROV_START:
+        camera_state.ble_enabled = true;
         ESP_LOGD(TAG, "Provisioning started");
         break;
     case WIFI_PROV_CRED_RECV:
@@ -97,7 +102,8 @@ static void prov_event_handler(void *arg, esp_event_base_t event_base,
         esp_restart();
         break;
     case WIFI_PROV_END:
-        // 配网流程结束（BLE 保持广播，不受影响）
+        // 本程序未调用 wifi_prov_mgr_keep_ble_on()，服务结束后 BLE 停止。
+        camera_state.ble_enabled = false;
         ESP_LOGD(TAG, "Provisioning ended");
         break;
     default:

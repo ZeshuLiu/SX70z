@@ -5,6 +5,7 @@ cmake_minimum_required(VERSION 3.16)
 # 把 src/ 注册为额外组件目录（外设/控制代码）
 set(EXTRA_COMPONENT_DIRS ${CMAKE_SOURCE_DIR}/src)
 include($ENV{IDF_PATH}/tools/cmake/project.cmake)
+set(PROJECT_VER "1.7.0")
 project(SX70_ModelZ)
 
 # 编译后复制固件，文件名带时间戳，方便 OTA 时识别版本

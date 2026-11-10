@@ -1,197 +1,221 @@
-/* display_manager.c - OLED 显示帧绘制：模式/快门/测光信息布局 + 倒计时显示 */
-
+/* Portrait OLED layout for the 32 x 128 logical canvas. */
 #include "display_manager.h"
 #include "gpio_inputs.h"
+#include "shutter_cal.h"
 #include "fonts/font5x8.h"
 #include "fonts/font6x12.h"
-#include "fonts/font8x16.h"
-#include <stdio.h>
+#include "fonts/font_terminus8x14.h"
 #include <math.h>
+#include <stdio.h>
+#include <string.h>
 
-// 拍摄模式字段索引 → 坐标 + 字体映射（布局固定，内容由调用者提供）
-// 0: cam_mode  1: ISO  2: 闪光灯  3: 快门速度  4: 测光值
-typedef struct {
-    int16_t x, y;
-    const ssd1306_font_t *font;
-} field_t;
+#define SCREEN_WIDTH 32
 
-static const field_t fields[] = {
-    {5,  2, &font6x12_font},  // 0: cam_mode
-    {55,  2, &font6x12_font},  // 1: ISO
-    {95,  1, &font6x12_font},  // 2: 自拍定时
-    { 8, 22, &font5x8_font},  // 3: 快门速度
-    {50, 22, &font5x8_font},  // 4: 测光值
-};
-
-static void draw_str_taking(ssd1306_t *disp, uint8_t index, const char *str)
+static void centered(ssd1306_t *disp, int y, const char *text,
+                     const ssd1306_font_t *font)
 {
-    ssd1306_draw_str(disp, fields[index].x, fields[index].y, str, fields[index].font);
+    int width = (int)strlen(text) * font->width;
+    if (width <= SCREEN_WIDTH && width > 0)
+        ssd1306_draw_str(disp, (SCREEN_WIDTH - width) / 2, y, text, font);
+}
+
+static void header(ssd1306_t *disp, const char *text)
+{
+    int width = (int)strlen(text) * font6x12_font.width;
+    ssd1306_fill_rect(disp, 0, 0, SCREEN_WIDTH, 15);
+    ssd1306_draw_str_black(disp, (SCREEN_WIDTH - width) / 2, 1, text, &font6x12_font);
+}
+
+/* Long durations retain the exact number of seconds in three rows. */
+static void duration_hms(ssd1306_t *disp, uint32_t seconds, int y)
+{
+    unsigned long parts[] = {
+        (unsigned long)(seconds / 3600),
+        (unsigned long)((seconds / 60) % 60),
+        (unsigned long)(seconds % 60),
+    };
+    static const char *units[] = {"h", "m", "s"};
+    char number[32];
+    if (parts[0] >= 100000) {
+        snprintf(number, sizeof(number), "%lu", parts[0]);
+        centered(disp, y, number, &font5x8_font);
+        centered(disp, y + 10, "hours", &font5x8_font);
+        snprintf(number, sizeof(number), "%02lum%02lus", parts[1], parts[2]);
+        centered(disp, y + 20, number, &font5x8_font);
+        return;
+    }
+    for (int row = 0; row < 3; ++row) {
+        snprintf(number, sizeof(number), "%lu", parts[row]);
+        int digits = (int)strlen(number);
+        if (digits <= 3) {
+            ssd1306_draw_str(disp, 24 - digits * 8, y + row * 14,
+                             number, &font_terminus8x14_font);
+            ssd1306_draw_str(disp, 26, y + row * 14 + 4, units[row], &font5x8_font);
+        } else {
+            /* Extremely long manual exposures still fit without truncation. */
+            char line[32];
+            snprintf(line, sizeof(line), "%lu%s", parts[row], units[row]);
+            centered(disp, y + row * 14 + 3, line, &font5x8_font);
+        }
+    }
+}
+
+static void shutter(ssd1306_t *disp, const camera_state_t *state)
+{
+    char value[8];
+    if (state->menu == MENU_BULB) {
+        if (state->time_mode < 2) {
+            centered(disp, 30, state->time_mode == 0 ? "B" : "T", &font_terminus8x14_font);
+        } else if (state->time_mode <= 9999) {
+            snprintf(value, sizeof(value), "%u", (unsigned)state->time_mode);
+            centered(disp, 28, value, &font_terminus8x14_font);
+            centered(disp, 47, "s", &font6x12_font);
+        } else {
+            duration_hms(disp, state->time_mode, 17);
+        }
+        return;
+    }
+
+    uint8_t speed = state->menu == MENU_AUTO
+        ? (state->has_flash ? 13 : state->metering.auto_shutter_pos)
+        : state->shutter_speed;
+    const char *label = get_shutter_speed(speed);
+    if (label[0] == '1' && label[1] == '/') {
+        centered(disp, 17, "1/", &font5x8_font);
+        size_t n = strlen(label + 2);
+        char suffix = 0;
+        if (n > 0 && (label[n + 1] == 'A' || label[n + 1] == 'B')) {
+            suffix = label[n + 1];
+            --n;
+        }
+        if (n >= sizeof(value)) n = sizeof(value) - 1;
+        memcpy(value, label + 2, n);
+        value[n] = '\0';
+        centered(disp, 28, value, &font_terminus8x14_font);
+        if (suffix) {
+            char unit[] = {'s', ' ', suffix, '\0'};
+            centered(disp, 47, unit, &font6x12_font);
+        } else {
+            centered(disp, 47, "s", &font6x12_font);
+        }
+    } else {
+        size_t n = strlen(label);
+        if (n && label[n - 1] == 's') --n;
+        if (n >= sizeof(value)) n = sizeof(value) - 1;
+        memcpy(value, label, n);
+        value[n] = '\0';
+        centered(disp, 28, value, &font_terminus8x14_font);
+        centered(disp, 47, "s", &font6x12_font);
+    }
 }
 
 void display_show_frame(const camera_state_t *state, ssd1306_t *disp)
 {
     if (!state->if_display) return;
-
     ssd1306_clear(disp);
-
-    // 顶部状态栏 — 反色，14px 适配 6×12 字体
-    ssd1306_fill_rect(disp, 0, 0, 128, 15);
-    ssd1306_clear_rect(disp, 1, 1, 48, 13);    // 模式背景
-    ssd1306_clear_rect(disp, 52, 1, 25, 13);   // ISO 背景
-    ssd1306_clear_rect(disp, 51, 0, 1, 15);   // ISO 分隔线
-    ssd1306_clear_rect(disp, 79, 0, 1, 15);   // 闪光灯分隔线
-
-    if (state->menu == MENU_SETTINGS_START) {
+    if (state->menu == MENU_SETTINGS_START)
         display_show_menu(state, disp);
-    } else if (state->menu < MENU_SETTINGS_START) {
+    else if (state->menu < MENU_SETTINGS_START)
         display_show_taking(state, disp);
-    }
-
     ssd1306_show(disp);
 }
 
-// 通用位图绘制（row-based, MSB left，1=画黑点）
-static void draw_bitmap(ssd1306_t *disp, int16_t x, int16_t y, uint8_t w, uint8_t h, const uint8_t *data)
-{
-    uint8_t bpr = (w + 7) / 8;
-    for (int row = 0; row < h; row++) {
-        for (int col = 0; col < w; col++) {
-            if (data[row * bpr + col / 8] & (0x80 >> (col % 8)))
-                ssd1306_clear_pixel(disp, x + col, y + row);
-        }
-    }
-}
-
-// 图标数据
-extern const unsigned char flash_14_14[];
-extern const unsigned char plane2[];
-
-// 14×14 实心圆（无闪光灯）
-// static const uint8_t circle_14[] = {
-//     0x00,0x00, 0x0F,0x80, 0x1F,0xC0, 0x3F,0xE0,
-//     0x3F,0xE0, 0x7F,0xF0, 0x7F,0xF0, 0x7F,0xF0,
-//     0x7F,0xF0, 0x3F,0xE0, 0x3F,0xE0, 0x1F,0xC0,
-//     0x0F,0x80, 0x00,0x00,
-// };
-
 void display_show_taking(const camera_state_t *state, ssd1306_t *disp)
 {
-    draw_str_taking(disp, 0, state->cam_mode);
-    draw_str_taking(disp, 1, "600");
+    const char *mode = state->menu == MENU_AUTO ? "AUTO" :
+        state->menu == MENU_MANUAL ? "MAN" : state->time_mode == 0 ? "BULB" : "TIME";
+    header(disp, mode);
+    shutter(disp, state);
+    ssd1306_draw_line(disp, 0, 61, 31, 61);
+
     if (state->has_flash) {
-        draw_bitmap(disp, 80, 1, 14, 14, flash_14_14);
+        ssd1306_fill_rect(disp, 0, 64, 32, 12);
+        ssd1306_draw_str_black(disp, 1, 64, "FLASH", &font6x12_font);
     } else {
-        // draw_bitmap(disp, 83, 1, 14, 14, circle_14);
+        centered(disp, 65, "F OFF", &font5x8_font);
     }
+    centered(disp, 80, "ISO600", &font5x8_font);
 
-    // 快门速度大字 / B-T/定时 模式
-    const char *speed_str;
-    if (state->menu == MENU_BULB) {
-        // menu 1: 根据 time_mode 显示
-        speed_str = (state->time_mode <= 1)
-            ? (state->time_mode == 0 ? "B" : "T")
-            : "00";  //TODO 显示定时时间 h min sec
-    } else if (state->menu == MENU_AUTO) {
-        speed_str = get_shutter_speed(state->metering.auto_shutter_pos);
+    char ev[12];
+    float v = state->metering.ev;
+    if (!isfinite(v)) snprintf(ev, sizeof(ev), "EV--");
+    else if (v > 99.9f) snprintf(ev, sizeof(ev), "EV HI");
+    else if (v < -9.9f) snprintf(ev, sizeof(ev), "EV LO");
+    else snprintf(ev, sizeof(ev), "EV%.1f", (double)v);
+    /* Rounding 99.9 to 100.0 would exceed the available width. */
+    if (strlen(ev) > 6) snprintf(ev, sizeof(ev), v < 0 ? "EV LO" : "EV HI");
+    centered(disp, 95, ev, &font5x8_font);
+
+    char status[12], timer[4], multi[4];
+    if (state->self_timer_sec > 0)
+        snprintf(timer, sizeof(timer), "%u", (unsigned)state->self_timer_sec);
+    else snprintf(timer, sizeof(timer), "--");
+    if (state->multi_exp_remain < 0) snprintf(multi, sizeof(multi), "-");
+    else snprintf(multi, sizeof(multi), "%u", (unsigned)state->multi_exp_remain);
+    snprintf(status, sizeof(status), "T%sM%s", timer, multi);
+    centered(disp, 110, status, &font5x8_font);
+
+    if (!state->wifi_enabled && !state->ble_enabled) {
+        centered(disp, 120, "AIR", &font5x8_font);
     } else {
-        speed_str = get_shutter_speed(state->shutter_speed);
-    }
-    draw_str_taking(disp, 3, speed_str);
-
-    // 状态栏右上角：自拍定时 + 多重曝光
-    {
-        char buf[4], me_buf[8];
-        snprintf(buf, sizeof(buf), "%d", state->self_timer_sec);
-        snprintf(me_buf, sizeof(me_buf), "%d", state->multi_exp_remain);
-        char line[16];
-        snprintf(line, sizeof(line), "%s %s",
-            state->self_timer_sec > 0 ? buf : "--",
-            state->multi_exp_remain >= 0 ? me_buf : "-");
-        ssd1306_draw_str_black(disp, 82, 1, line, &font6x12_font);
-    }
-
-    // 飞行模式图标（状态栏最右侧）
-    if (state->flight_mode) {
-        draw_bitmap(disp, 112, 1, 14, 13, plane2);
-    }
-
-    // 测光值（右下角，LUX 自适应小数位: 总数 6 位）
-    {
-        char info_str[32];
-        float lux = state->metering.last_lux;
-        int int_digits = (lux >= 1.0f) ? (int)log10f(lux) + 1 : 1;
-        if (lux < 0.0f) int_digits = 1;
-        int decimals = 6 - int_digits - 1;  // -1 for '.'
-        if (decimals < 0) decimals = 0;
-        if (decimals > 4) decimals = 4;
-        snprintf(info_str, sizeof(info_str), "EV%.1f L%.*f",
-                (double)state->metering.ev, decimals, (double)lux);
-        draw_str_taking(disp, 4, info_str);
+        if (state->wifi_enabled) ssd1306_fill_rect(disp, 5, 120, 10, 8);
+        if (state->ble_enabled) ssd1306_fill_rect(disp, 17, 120, 10, 8);
+        if (state->wifi_enabled) ssd1306_draw_str_black(disp, 5, 120, "W+", &font5x8_font);
+        else ssd1306_draw_str(disp, 5, 120, "W-", &font5x8_font);
+        if (state->ble_enabled) ssd1306_draw_str_black(disp, 17, 120, "B+", &font5x8_font);
+        else ssd1306_draw_str(disp, 17, 120, "B-", &font5x8_font);
     }
 }
 
 void display_show_menu(const camera_state_t *state, ssd1306_t *disp)
 {
-    draw_str_taking(disp, 0, state->cam_mode);
-    draw_str_taking(disp, 1, "600");
-    if (state->has_flash) {
-        draw_bitmap(disp, 80, 1, 14, 14, flash_14_14);
-    }
-    // 状态栏右上角：自拍定时 + 多重曝光
-    char buf[4], me_buf[8];
-    snprintf(buf, sizeof(buf), "%d", state->self_timer_sec);
-    snprintf(me_buf, sizeof(me_buf), "%d", state->multi_exp_remain);
-    char line[16];
-    snprintf(line, sizeof(line), "%s %s",
-        state->self_timer_sec > 0 ? buf : "--",
-        state->multi_exp_remain >= 0 ? me_buf : "-");
-    ssd1306_draw_str_black(disp, 82, 1, line, &font6x12_font);
-
-    // 飞行模式图标
-    if (state->flight_mode) {
-        draw_bitmap(disp, 112, 1, 14, 13, plane2);
-    }
-
-    // 参数名 + 值
-    const char *pname;
-    const char *pval_str;
-    char pval_buf[16];
-
+    header(disp, "MENU");
+    char value[12];
     if (menu_item_idx == 0) {
-        pname = "SelfTimer";
-        int v = state->self_timer_sec;
-        snprintf(pval_buf, sizeof(pval_buf), "%ds", v);
-        pval_str = pval_buf;
+        centered(disp, 24, "Self", &font5x8_font);
+        centered(disp, 34, "Timer", &font5x8_font);
+        snprintf(value, sizeof(value), "%us", (unsigned)state->self_timer_sec);
+        centered(disp, 55, value, &font6x12_font);
     } else if (menu_item_idx == 1) {
-        pname = "MultiExp";
-        int v = state->multi_exp_remain;
-        snprintf(pval_buf, sizeof(pval_buf), "%d", v);
-        pval_str = pval_buf;
+        centered(disp, 24, "Multi", &font5x8_font);
+        centered(disp, 34, "Exp", &font5x8_font);
+        snprintf(value, sizeof(value), "%d", (int)state->multi_exp_remain);
+        centered(disp, 55, value, &font6x12_font);
     } else if (menu_item_idx == 2) {
-        pname = "Flight";
-        pval_str = state->flight_mode ? "ON" : "OFF";
+        centered(disp, 24, "Flight", &font5x8_font);
+        centered(disp, 55, state->flight_mode ? "ON" : "OFF", &font6x12_font);
     } else {
-        pname = "IP Addr";
-        pval_str = state->ip_str[0] ? state->ip_str : "not connected";
+        centered(disp, 24, "IP", &font5x8_font);
+        if (!state->ip_str[0]) {
+            centered(disp, 44, "not", &font5x8_font);
+            centered(disp, 54, "conn", &font5x8_font);
+        } else {
+            /* One octet per line, retaining dots to make the address unambiguous. */
+            const volatile char *p = state->ip_str;
+            for (int row = 0; row < 4 && *p; ++row) {
+                size_t n = 0;
+                while (*p && *p != '.' && n < 3) value[n++] = *p++;
+                if (*p == '.') value[n++] = *p++;
+                value[n] = '\0';
+                centered(disp, 42 + row * 10, value, &font5x8_font);
+            }
+        }
     }
-
-    // 左: 调整标记（5×8 字体参数可调时显示）
-	if (menu_adjust && menu_item_idx < 3) {
-        ssd1306_fill_rect(disp, 2, 19, 3, 7);
-    }
-    // 中: 参数名
-    ssd1306_draw_str(disp, 8, 18, pname, &font5x8_font);
-    // 右: 参数值
-    ssd1306_draw_str(disp, 57, 18, pval_str, &font5x8_font);
+    if (menu_adjust && menu_item_idx < 3)
+        centered(disp, 80, "EDIT", &font5x8_font);
 }
 
-void display_show_countdown(ssd1306_t *disp, int16_t seconds_remaining)
+void display_show_countdown(ssd1306_t *disp, int32_t seconds_remaining)
 {
-    if (seconds_remaining < 0) return;
+    if (!disp || !disp->buff || seconds_remaining < 0) return;
     ssd1306_clear(disp);
-    char buf[10];
-    snprintf(buf, sizeof(buf), "%ds", seconds_remaining);
-    // 居中显示（8×16 字体，"10s" = 3×8 = 24px 宽）
-    ssd1306_draw_str(disp, 52, 8, buf, &font8x16_font);
+    if (seconds_remaining <= 9999) {
+        char value[8];
+        snprintf(value, sizeof(value), "%ld", (long)seconds_remaining);
+        centered(disp, 50, value, &font_terminus8x14_font);
+        centered(disp, 70, "s", &font6x12_font);
+    } else {
+        duration_hms(disp, (uint32_t)seconds_remaining, 49);
+    }
     ssd1306_show(disp);
 }

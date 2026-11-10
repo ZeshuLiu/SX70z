@@ -1,0 +1,19 @@
+{
+  "app_version": "1.7.0",
+  "idf_version": "5.5.2",
+  "target": "esp32",
+  "source_commit": "same commit as this manifest",
+  "stable_source_commit": "55b2c1b9456e876e90468fb5e3b1393696ce7c12",
+  "stable_tag": "stable-20261110-pre-ui",
+  "binary": "SX70Z_Ver1_7_0_UI_20261110.bin",
+  "size": 957760,
+  "sha256": "b276dbddfc4c8614b616f5dcf1fccf546bda2284361593d6342c6d2653f58c29",
+  "smallest_app_partition_bytes": 1740800,
+  "hardware_tested": false,
+  "flashed": false,
+  "validation": [
+    "ESP-IDF 5.5.2 build and partition size check",
+    "MSVC actual C drawing host checks",
+    "95 glyph BDF conversion round-trip"
+  ]
+}

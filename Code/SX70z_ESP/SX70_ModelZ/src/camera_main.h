@@ -54,6 +54,8 @@ typedef struct {
 typedef volatile struct {
     bool if_display;            // OLED 是否可用
     bool has_flash;             // 闪光灯是否接入（control_task 统一检测）
+    bool wifi_enabled;          // 当前 Wi-Fi STA 已启动；不等于已连接
+    bool ble_enabled;           // 当前 BLE 配网服务已启动；不等于已连接
 
     metering_state_t metering;  // 测光
     button_state_t button;      // 按键
