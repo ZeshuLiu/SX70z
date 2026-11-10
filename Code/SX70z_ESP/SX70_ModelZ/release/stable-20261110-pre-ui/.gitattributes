@@ -1,0 +1,2 @@
+# Preserve archive bytes so SHA256SUMS survives checkout on any platform.
+* -text

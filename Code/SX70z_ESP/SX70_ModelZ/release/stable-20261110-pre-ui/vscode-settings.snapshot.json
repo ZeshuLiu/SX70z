@@ -1,0 +1,21 @@
+{
+  "C_Cpp.intelliSenseEngine": "default",
+  "idf.extensionActivationMode": "always",
+  "idf.openOcdConfigs": [
+    "interface/ftdi/esp32_devkitj_v1.cfg",
+    "target/esp32.cfg"
+  ],
+  "idf.portWin": "COM9",
+  "idf.currentSetup": "D:\\Software\\ESP_IDF\\.espressif\\v6.1\\esp-idf",
+  "idf.customExtraVars": {
+    "IDF_TARGET": "esp32"
+  },
+  "clangd.path": "d:\\ESPIDF_TOOL\\tools\\esp-clang\\esp-19.1.2_20250312\\esp-clang\\bin\\clangd.exe",
+  "clangd.arguments": [
+    "--background-index",
+    "--query-driver=**",
+    "--compile-commands-dir=e:\\Develop\\SX-70-Mk2\\Code\\SX70z_ESP\\SX70_ModelZ\\build"
+  ],
+  "idf.flashType": "UART",
+  "idf.monitorPort": "COM9"
+}
