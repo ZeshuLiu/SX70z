@@ -23,3 +23,7 @@ Code/SX70z_ESP/SX70_ModelZ/.claude/
 
 # 代码审查文档（内部使用）
 CODE_ISSUES.md
+
+# KiCad local settings and automatic backups
+*.kicad_prl
+/Hardware/**/*-backups/*.zip
