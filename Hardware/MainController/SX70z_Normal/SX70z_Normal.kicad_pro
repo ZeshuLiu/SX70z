@@ -448,7 +448,7 @@
       "internal_id": "",
       "mfg": "",
       "mpn": "",
-      "sch_revision": ""
+      "sch_revision": "3.5。1"
     },
     "layer_pairs": [],
     "layer_presets": [
@@ -991,7 +991,7 @@
       {
         "filename": "SX70z_Normal.kicad_sch",
         "name": "SX70z_Normal",
-        "uuid": "00000000-0000-0000-0000-000000000000"
+        "uuid": "b68e25c7-58ea-4fd3-9614-c4064fa4b280"
       }
     ],
     "used_designators": "",
@@ -1000,7 +1000,7 @@
   "sheets": [
     [
       "b68e25c7-58ea-4fd3-9614-c4064fa4b280",
-      "Root"
+      "SX70z_Normal"
     ]
   ],
   "text_variables": {},
