@@ -38,7 +38,7 @@ static unsigned count(void) {
     return n;
 }
 static unsigned pixel(unsigned x, unsigned y) {
-    return (d.buff[y + 128 * ((31-x) / 8)] >> ((31-x) % 8)) & 1;
+    return (d.buff[127-y + 128 * (x / 8)] >> (x % 8)) & 1;
 }
 static const char *output_dir;
 static void dump(const char *name) {
@@ -57,7 +57,7 @@ static void dump(const char *name) {
 int main(int argc, char **argv) {
     if (argc > 1) output_dir = argv[1];
     memset(storage, 0xa5, sizeof(storage));
-    ssd1306_set_rotation(&d, SSD1306_ROTATION_90_CW);
+    ssd1306_set_rotation(&d, SSD1306_ROTATION_90_CCW);
     assert(d.width == 32 && d.height == 128 && count() == 0);
     /* Every logical point maps to exactly one distinct expected physical bit. */
     for (unsigned y=0; y<128; ++y) for (unsigned x=0; x<32; ++x) {

@@ -11,8 +11,8 @@
 
 typedef enum {
     SSD1306_ROTATION_0 = 0,
-    /* Native panel is viewed after physically turning it clockwise by 90 degrees. */
-    SSD1306_ROTATION_90_CW,
+    /* Native panel is viewed after physically turning it counterclockwise by 90 degrees. */
+    SSD1306_ROTATION_90_CCW,
 } ssd1306_rotation_t;
 
 typedef struct {

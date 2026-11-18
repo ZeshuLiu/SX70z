@@ -449,9 +449,9 @@ static void shutter_task(void *pvParameters)
 
 void control_task(void *pvParameters)
 {
-    /* ---- SSD1306 OLED（原生 128x32，顺时针转屏观看时逻辑 32x128） ---- */
+    /* ---- SSD1306 OLED（原生 128x32，逆时针转屏观看时逻辑 32x128） ---- */
     if (ssd1306_init(&display, 128, 32, 0x3C, I2C_NUM_1, false)) {
-        ssd1306_set_rotation(&display, SSD1306_ROTATION_90_CW);
+        ssd1306_set_rotation(&display, SSD1306_ROTATION_90_CCW);
         ssd1306_draw_str(&display, 3, 44, "SX70z", &font5x8_font);
         ssd1306_draw_str(&display, 3, 60, "READY", &font5x8_font);
         ssd1306_show(&display);

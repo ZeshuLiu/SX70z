@@ -13,9 +13,9 @@ static const char *TAG = "SSD1306";
 
 static void draw_pixel(ssd1306_t *dev, uint16_t x, uint16_t y, bool color) {
     if (x < dev->width && y < dev->height) {
-        if (dev->rotation == SSD1306_ROTATION_90_CW) {
-            uint16_t native_x = y;
-            y = dev->panel_height - 1 - x;
+        if (dev->rotation == SSD1306_ROTATION_90_CCW) {
+            uint16_t native_x = dev->panel_width - 1 - y;
+            y = x;
             x = native_x;
         }
         if (color) {
@@ -170,10 +170,10 @@ void ssd1306_clear(ssd1306_t *dev) {
 }
 
 void ssd1306_set_rotation(ssd1306_t *dev, ssd1306_rotation_t rotation) {
-    if (rotation != SSD1306_ROTATION_0 && rotation != SSD1306_ROTATION_90_CW) return;
+    if (rotation != SSD1306_ROTATION_0 && rotation != SSD1306_ROTATION_90_CCW) return;
     dev->rotation = rotation;
-    dev->width = rotation == SSD1306_ROTATION_90_CW ? dev->panel_height : dev->panel_width;
-    dev->height = rotation == SSD1306_ROTATION_90_CW ? dev->panel_width : dev->panel_height;
+    dev->width = rotation == SSD1306_ROTATION_90_CCW ? dev->panel_height : dev->panel_width;
+    dev->height = rotation == SSD1306_ROTATION_90_CCW ? dev->panel_width : dev->panel_height;
     ssd1306_clear(dev);
 }
 
@@ -335,21 +335,21 @@ void ssd1306_scroll_horiz_stop(ssd1306_t *dev) {
 }
 
 void ssd1306_scroll_row_vert(ssd1306_t *dev, bool down) {
-    if (dev->rotation == SSD1306_ROTATION_90_CW) {
+    if (dev->rotation == SSD1306_ROTATION_90_CCW) {
         /* Logical y is the native column; preserve wraparound without a second buffer. */
         for (uint16_t x = 0; x < dev->width; ++x) {
-            uint16_t native_y = dev->panel_height - 1 - x;
+            uint16_t native_y = x;
             uint16_t base = dev->panel_width * (native_y >> 3);
             uint8_t bit = 1u << (native_y & 7);
             if (down) {
-                bool carry = (dev->buff[base + dev->height - 1] & bit) != 0;
+                bool carry = (dev->buff[base] & bit) != 0;
                 for (int y = dev->height - 1; y > 0; --y)
-                    draw_pixel(dev, x, y, (dev->buff[base + y - 1] & bit) != 0);
+                    draw_pixel(dev, x, y, (dev->buff[base + dev->height - y] & bit) != 0);
                 draw_pixel(dev, x, 0, carry);
             } else {
-                bool carry = (dev->buff[base] & bit) != 0;
+                bool carry = (dev->buff[base + dev->height - 1] & bit) != 0;
                 for (uint16_t y = 0; y + 1 < dev->height; ++y)
-                    draw_pixel(dev, x, y, (dev->buff[base + y + 1] & bit) != 0);
+                    draw_pixel(dev, x, y, (dev->buff[base + dev->height - 2 - y] & bit) != 0);
                 draw_pixel(dev, x, dev->height - 1, carry);
             }
         }
